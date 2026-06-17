@@ -277,10 +277,35 @@ function WorldMap({
         style={animate ? { animation: "bnm-breathe 14s ease-in-out infinite" } : undefined}
       >
         <defs>
-          <radialGradient id="bnm-bg" cx="50%" cy="46%" r="68%">
-            <stop offset="0%"   stopColor="#0a1c34" />
-            <stop offset="60%"  stopColor="#051226" />
-            <stop offset="100%" stopColor="#020812" />
+          {/* Ocean: koyu derin merkezden açık kenarlara — gerçek deniz hissi */}
+          <radialGradient id="bnm-ocean" cx="50%" cy="48%" r="72%">
+            <stop offset="0%"   stopColor="#0c2447" />
+            <stop offset="45%"  stopColor="#071735" />
+            <stop offset="80%"  stopColor="#030c1e" />
+            <stop offset="100%" stopColor="#01060f" />
+          </radialGradient>
+          {/* Subtle ocean depth noise — diagonal weave pattern */}
+          <pattern id="bnm-ocean-noise" width="6" height="6" patternUnits="userSpaceOnUse">
+            <rect width="6" height="6" fill="transparent" />
+            <circle cx="3" cy="3" r="0.3" fill="rgba(34,211,238,0.08)" />
+          </pattern>
+          {/* Land: iki tonlu — alttan koyu bezelya, üstten parlatma */}
+          <linearGradient id="bnm-land" x1="0%" y1="0%" x2="0%" y2="100%">
+            <stop offset="0%"  stopColor="#1a4775" />
+            <stop offset="55%" stopColor="#0e2c52" />
+            <stop offset="100%" stopColor="#072042" />
+          </linearGradient>
+          {/* Atmosphere edge vignette */}
+          <radialGradient id="bnm-vignette" cx="50%" cy="50%" r="65%">
+            <stop offset="55%" stopColor="rgba(0,0,0,0)" />
+            <stop offset="90%" stopColor="rgba(0,0,0,0.35)" />
+            <stop offset="100%" stopColor="rgba(2,8,20,0.85)" />
+          </radialGradient>
+          {/* Day-side soft top highlight */}
+          <radialGradient id="bnm-daylight" cx="42%" cy="22%" r="48%">
+            <stop offset="0%"  stopColor="rgba(125,211,252,0.18)" />
+            <stop offset="60%" stopColor="rgba(125,211,252,0.04)" />
+            <stop offset="100%" stopColor="rgba(125,211,252,0)" />
           </radialGradient>
           <filter id="bnm-landglow" x="-10%" y="-10%" width="120%" height="120%">
             <feGaussianBlur stdDeviation="1.4" result="b" />
@@ -289,9 +314,18 @@ function WorldMap({
               <feMergeNode in="SourceGraphic" />
             </feMerge>
           </filter>
+          {/* Sharp coastline highlight pass */}
+          <filter id="bnm-coast" x="-5%" y="-5%" width="110%" height="110%">
+            <feGaussianBlur stdDeviation="0.4" />
+          </filter>
         </defs>
 
-        <rect width="1000" height="500" fill="url(#bnm-bg)" />
+        {/* Layer 1: deep ocean radial gradient */}
+        <rect width="1000" height="500" fill="url(#bnm-ocean)" />
+        {/* Layer 2: ocean micro-pattern */}
+        <rect width="1000" height="500" fill="url(#bnm-ocean-noise)" opacity="0.45" />
+        {/* Layer 3: day-side soft highlight */}
+        <rect width="1000" height="500" fill="url(#bnm-daylight)" />
 
         <g style={{
           transform: mapTransform,
@@ -299,21 +333,61 @@ function WorldMap({
           transformOrigin: "0 0",
         }}>
 
+          {/* Fine graticule — 5° latitude/longitude */}
+          {Array.from({ length: 35 }, (_, i) => (
+            <line key={`vf${i}`} x1={(i + 1) * (1000 / 36)} y1="0" x2={(i + 1) * (1000 / 36)} y2="500"
+              stroke="#13335c" strokeWidth="0.25" opacity="0.32" />
+          ))}
           {Array.from({ length: 17 }, (_, i) => (
-            <line key={`v${i}`} x1={(i + 1) * 55.5} y1="0" x2={(i + 1) * 55.5} y2="500"
-              stroke="#13335c" strokeWidth="0.4" opacity="0.5" />
+            <line key={`hf${i}`} x1="0" y1={(i + 1) * (500 / 18)} x2="1000" y2={(i + 1) * (500 / 18)}
+              stroke="#13335c" strokeWidth="0.25" opacity="0.32" />
           ))}
-          {Array.from({ length: 8 }, (_, i) => (
-            <line key={`h${i}`} x1="0" y1={(i + 1) * 55.5} x2="1000" y2={(i + 1) * 55.5}
-              stroke="#13335c" strokeWidth="0.4" opacity="0.5" />
+          {/* Coarse graticule — 30° */}
+          {[1, 2, 3, 4, 5].map((i) => (
+            <line key={`vc${i}`} x1={i * (1000 / 6)} y1="0" x2={i * (1000 / 6)} y2="500"
+              stroke="#1b4d82" strokeWidth="0.5" opacity="0.55" />
           ))}
-          <line x1="0" y1="250" x2="1000" y2="250" stroke="#22d3ee" strokeWidth="0.6" opacity="0.18" />
+          {[1, 2].map((i) => (
+            <line key={`hc${i}`} x1="0" y1={i * (500 / 3)} x2="1000" y2={i * (500 / 3)}
+              stroke="#1b4d82" strokeWidth="0.5" opacity="0.55" />
+          ))}
 
+          {/* Tropics + arctic circles + prime meridian + equator */}
+          <line x1="0" y1="250" x2="1000" y2="250" stroke="#22d3ee" strokeWidth="0.8" opacity="0.32" />
+          <line x1="500" y1="0"  x2="500" y2="500" stroke="#22d3ee" strokeWidth="0.6" opacity="0.22" />
+          <line x1="0" y1="186.5" x2="1000" y2="186.5" stroke="#38bdf8" strokeWidth="0.4" opacity="0.22" strokeDasharray="3 4" />
+          <line x1="0" y1="313.5" x2="1000" y2="313.5" stroke="#38bdf8" strokeWidth="0.4" opacity="0.22" strokeDasharray="3 4" />
+          <line x1="0" y1="65"  x2="1000" y2="65"  stroke="#38bdf8" strokeWidth="0.35" opacity="0.18" strokeDasharray="2 6" />
+          <line x1="0" y1="435" x2="1000" y2="435" stroke="#38bdf8" strokeWidth="0.35" opacity="0.18" strokeDasharray="2 6" />
+
+          {/* Land — depth shadow pass (offset 2px down, blurred) */}
+          <g transform="translate(0,2.5)" opacity="0.55" filter="url(#bnm-coast)">
+            {WORLD_LAND_PATHS.map((d, i) => (
+              <path key={`shadow-${i}`} d={d} fill="#01060f" stroke="none" />
+            ))}
+          </g>
+          {/* Land — base fill with vertical gradient (lighter top, darker bottom) */}
           <g filter="url(#bnm-landglow)">
             {WORLD_LAND_PATHS.map((d, i) => (
-              <path key={i} d={d}
-                fill="#0e2a4e" stroke="#2563a8" strokeWidth="1"
-                strokeLinejoin="round" opacity="0.92" />
+              <path key={`base-${i}`} d={d}
+                fill="url(#bnm-land)" stroke="#3a7fc4" strokeWidth="1"
+                strokeLinejoin="round" opacity="0.95" />
+            ))}
+          </g>
+          {/* Land — bright coastline inner stroke */}
+          <g opacity="0.65">
+            {WORLD_LAND_PATHS.map((d, i) => (
+              <path key={`coast-${i}`} d={d}
+                fill="none" stroke="#5eb3ee" strokeWidth="0.45"
+                strokeLinejoin="round" />
+            ))}
+          </g>
+          {/* Land — top edge subtle highlight (1px up, blue tint) */}
+          <g transform="translate(0,-0.6)" opacity="0.35">
+            {WORLD_LAND_PATHS.map((d, i) => (
+              <path key={`hl-${i}`} d={d}
+                fill="none" stroke="#a5d8ff" strokeWidth="0.35"
+                strokeLinejoin="round" />
             ))}
           </g>
 
@@ -368,7 +442,45 @@ function WorldMap({
 
         </g>
 
-        <rect width="1000" height="500" fill="none" stroke="#22d3ee" strokeWidth="1" opacity="0.10" />
+        {/* Atmosphere vignette — kenarlardan koyu fade */}
+        <rect width="1000" height="500" fill="url(#bnm-vignette)" pointerEvents="none" />
+
+        {/* Hairline cyan border */}
+        <rect width="1000" height="500" fill="none" stroke="#22d3ee" strokeWidth="1" opacity="0.18" />
+
+        {/* Coordinate hint labels — köşelerde N/S/E/W */}
+        <g fill="rgba(125,211,252,0.55)" fontFamily="ui-monospace, monospace" fontSize="8">
+          <text x="500" y="11" textAnchor="middle">90°N</text>
+          <text x="500" y="494" textAnchor="middle">90°S</text>
+          <text x="6"   y="253" textAnchor="start">180°W</text>
+          <text x="994" y="253" textAnchor="end">180°E</text>
+          <text x="498" y="246" textAnchor="end">0°</text>
+        </g>
+
+        {/* Compass rose — sağ üst */}
+        <g transform="translate(948 38)" opacity="0.7">
+          <circle r="14" fill="rgba(2,8,20,0.6)" stroke="rgba(125,211,252,0.45)" strokeWidth="0.6" />
+          <line x1="0" y1="-12" x2="0" y2="-3" stroke="#22d3ee" strokeWidth="1" />
+          <line x1="0" y1="3"  x2="0" y2="12"  stroke="#3a7fc4" strokeWidth="0.6" />
+          <line x1="-12" y1="0" x2="-3" y2="0" stroke="#3a7fc4" strokeWidth="0.6" />
+          <line x1="3"  y1="0" x2="12"  y2="0" stroke="#3a7fc4" strokeWidth="0.6" />
+          <text x="0" y="-15" textAnchor="middle" fontFamily="ui-monospace, monospace" fontSize="7"
+                fill="#22d3ee">N</text>
+        </g>
+
+        {/* Scale bar — sol alt */}
+        <g transform="translate(20 478)" opacity="0.65">
+          <line x1="0" y1="0" x2="120" y2="0" stroke="rgba(125,211,252,0.65)" strokeWidth="1" />
+          <line x1="0" y1="-3" x2="0" y2="3" stroke="rgba(125,211,252,0.65)" strokeWidth="1" />
+          <line x1="60" y1="-2" x2="60" y2="2" stroke="rgba(125,211,252,0.45)" strokeWidth="0.6" />
+          <line x1="120" y1="-3" x2="120" y2="3" stroke="rgba(125,211,252,0.65)" strokeWidth="1" />
+          <text x="0"   y="-6" textAnchor="middle" fontFamily="ui-monospace, monospace" fontSize="7"
+                fill="rgba(125,211,252,0.7)">0</text>
+          <text x="60"  y="-6" textAnchor="middle" fontFamily="ui-monospace, monospace" fontSize="7"
+                fill="rgba(125,211,252,0.45)">2k</text>
+          <text x="120" y="-6" textAnchor="middle" fontFamily="ui-monospace, monospace" fontSize="7"
+                fill="rgba(125,211,252,0.7)">4000 km</text>
+        </g>
       </svg>
     </div>
   );

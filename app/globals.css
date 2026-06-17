@@ -139,3 +139,79 @@ html, body {
   border: 1px dashed rgba(34, 211, 238, 0.3);
   animation: holo-platform 16s linear infinite;
 }
+
+@keyframes event-cell-pulse {
+  0%, 100% {
+    box-shadow: 0 0 8px rgba(34, 211, 238, 0.12);
+  }
+  50% {
+    box-shadow: 0 0 18px var(--event-color);
+  }
+}
+
+@keyframes capital-dash {
+  to {
+    stroke-dashoffset: -26;
+  }
+}
+
+@keyframes capital-dash-reverse {
+  to {
+    stroke-dashoffset: 26;
+  }
+}
+
+@keyframes capital-core-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes scenario-breathe {
+  0%, 100% {
+    opacity: 0.82;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.025);
+  }
+}
+
+@keyframes scenario-clash {
+  0%, 100% {
+    transform: translate(-50%, -50%) scale(1);
+  }
+  50% {
+    transform: translate(-50%, -50%) scale(1.12);
+  }
+}
+
+.event-holo-cell-active {
+  animation: event-cell-pulse 2.6s ease-in-out infinite;
+}
+
+.capital-flow-line {
+  animation: capital-dash 2.4s linear infinite;
+}
+
+.capital-flow-line-reverse {
+  animation: capital-dash-reverse 2.4s linear infinite;
+}
+
+.capital-core::before {
+  content: "";
+  position: absolute;
+  inset: -12px;
+  border-radius: 999px;
+  border: 1px dashed rgba(34, 211, 238, 0.24);
+  animation: capital-core-spin 24s linear infinite;
+}
+
+.scenario-figure {
+  animation: scenario-breathe 4s ease-in-out infinite;
+}
+
+.scenario-clash {
+  animation: scenario-clash 3.2s ease-in-out infinite;
+}

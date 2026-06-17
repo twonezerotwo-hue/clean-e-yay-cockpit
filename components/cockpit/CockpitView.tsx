@@ -16,11 +16,15 @@ import {
 } from "@/lib/selectors/cockpit";
 
 import { NewsPanel } from "@/components/panels/NewsPanel";
+import { CapitalRotationPanel } from "@/components/panels/CapitalRotationPanel";
+import { EventCalendarPanel } from "@/components/panels/EventCalendarPanel";
+import { ScenarioPanel } from "@/components/panels/ScenarioPanel";
 
 import { AgentBrainCard } from "./AgentBrainCard";
 import { CockpitCard, buildCockpitCards } from "./cards";
 import { HolographicSignalDeck } from "./HolographicSignalDeck";
 import { Layer2QuickNav } from "./Layer2QuickNav";
+import { MacroRiskStrip } from "./MacroRiskStrip";
 import { SignalRadar } from "./SignalRadar";
 import { SpaceBrainScene } from "./SpaceBrainScene";
 
@@ -255,6 +259,15 @@ export function CockpitView() {
         </div>
 
         <HolographicSignalDeck brief={brief} />
+
+        <MacroRiskStrip />
+
+        <section className="grid grid-cols-1 gap-5 xl:grid-cols-2">
+          <EventCalendarPanel />
+          <ScenarioPanel />
+        </section>
+
+        <CapitalRotationPanel />
 
         <AgentBrainCard brief={brief} generatedAt={data?.generated_at} />
 

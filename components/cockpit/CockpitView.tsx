@@ -15,6 +15,8 @@ import {
   selectDecisionTrace,
 } from "@/lib/selectors/cockpit";
 
+import { NewsPanel } from "@/components/panels/NewsPanel";
+
 import { AgentBrainCard } from "./AgentBrainCard";
 import { CockpitCard, buildCockpitCards } from "./cards";
 import { HolographicSignalDeck } from "./HolographicSignalDeck";
@@ -261,6 +263,8 @@ export function CockpitView() {
             <CockpitCard key={card.id} {...card} />
           ))}
         </section>
+
+        <NewsPanel />
 
         <SignalRadar brief={brief} />
       </section>

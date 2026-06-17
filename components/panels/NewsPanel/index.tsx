@@ -17,10 +17,24 @@ const NEWS_HEAD = 6;
 
 type Headline = ReturnType<typeof selectHeadlines>[number];
 
+function urlForHeadline(h: { url?: string; title: string }): string {
+  const raw = (h as { url?: string }).url;
+  if (raw && /^https?:\/\//.test(raw)) return raw;
+  return `https://news.google.com/search?q=${encodeURIComponent(h.title)}`;
+}
+
 function HeadlineItem({ h }: { h: Headline }) {
   const badges = headlineImpactBadges(h.asset_impact);
+  const href = urlForHeadline(h);
   return (
-    <li className="border-b border-white/5 pb-2">
+    <li className="border-b border-white/5 pb-2 group">
+      <a
+        href={href}
+        target="_blank"
+        rel="noopener noreferrer"
+        title="Habere git"
+        className="block hover:bg-white/[0.02] rounded px-1 -mx-1 py-0.5 transition-colors"
+      >
       <div className="flex flex-wrap items-center gap-2 text-[10px] uppercase tracking-widest text-white/40">
         <span>{h.source}</span>
         <span>·</span>
@@ -31,8 +45,9 @@ function HeadlineItem({ h }: { h: Headline }) {
             <span className={DIRECTION_COLOR[h.sentiment]}>{h.sentiment}</span>
           </>
         ) : null}
+        <span className="ml-auto text-cyan-300/0 group-hover:text-cyan-300/80 transition-colors">↗</span>
       </div>
-      <div className="text-white/85 mt-1 break-words">{h.title_tr || h.title}</div>
+      <div className="text-white/85 mt-1 break-words group-hover:text-white">{h.title_tr || h.title}</div>
       {/* P0 — etkilenen semboller (deterministik kararda asset_impact) veya
           yoksa "yalnızca bağlam" rozeti. Haber karar VERMEZ; bağlam sağlar. */}
       <div className="mt-1 flex flex-wrap items-center gap-1">
@@ -57,6 +72,7 @@ function HeadlineItem({ h }: { h: Headline }) {
           </span>
         )}
       </div>
+      </a>
     </li>
   );
 }

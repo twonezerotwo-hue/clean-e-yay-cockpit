@@ -12,7 +12,7 @@
  */
 import { useEffect, useState } from "react";
 
-import { geoForRegion, type GeoPoint } from "@/lib/news-region-map";
+import { classifyHeadlineRegion, geoForRegion, type GeoPoint } from "@/lib/news-region-map";
 import { WORLD_LAND_PATHS } from "@/lib/world-map-path";
 import type { NewsHeadline } from "@/types/generated/api";
 
@@ -31,7 +31,6 @@ interface EnrichedNode {
   geo:      GeoPoint;
   actor:    { name: string; short: string } | null;
   url:      string;
-  raw_title:string;
 }
 
 // Backend henüz NewsHeadline.url alanı dönmüyor; varsa kullanılır, yoksa
@@ -104,13 +103,12 @@ function enrichHeadlines(headlines: NewsHeadline[]): EnrichedNode[] {
     return {
       id:       `n${i}-${h.id}`,
       headline: text,
-      raw_title:h.title,
       source:   h.source,
       severity: deriveSeverity(h),
       category: assets[0]?.asset.toLowerCase() ?? "news",
       age_min:  toAgeMin(h.ts),
       assets,
-      geo:      geoForRegion(h.region),
+      geo:      geoForRegion(classifyHeadlineRegion(text, h.region)),
       actor:    detectActor(text),
       url:      urlForHeadline(h),
     };
@@ -170,38 +168,19 @@ function WorldMap({
     return () => clearTimeout(t);
   }, [activeId, animate, durationMs]);
 
-  // ── 3D Earth projection ──────────────────────────────────────────────────
-  // Earth: cx=500, cy=250, r=220 inside viewBox 1000x500.
-  // (geo.x, geo.y) ∈ [0,1000]×[0,500] (equirectangular) → orthographic sphere.
-  const EARTH_CX = 500;
-  const EARTH_CY = 250;
-  const EARTH_R = 220;
-  // Camera longitude offset (Europe/Africa/Middle East centered, USA on left).
-  const VIEW_LON_OFFSET = -15;
-  function projectGeo(gx: number, gy: number) {
-    const lon = (gx / 1000) * 360 - 180 - VIEW_LON_OFFSET;
-    const lat = 90 - (gy / 500) * 180;
-    const phi = (lon * Math.PI) / 180;
-    const theta = (lat * Math.PI) / 180;
-    const px = EARTH_CX + EARTH_R * Math.cos(theta) * Math.sin(phi);
-    const py = EARTH_CY - EARTH_R * Math.sin(theta);
-    const pz = Math.cos(theta) * Math.cos(phi);
-    return { px, py, pz };
-  }
+  const ZK = 2.1;
+  const zcx = activeNode ? Math.min(762, Math.max(238, activeNode.geo.x)) : 500;
+  const zcy = activeNode ? Math.min(381, Math.max(119, activeNode.geo.y)) : 250;
+  const mapTransform = zoomed
+    ? `translate(500px,250px) scale(${ZK}) translate(${-zcx}px,${-zcy}px)`
+    : "translate(0px,0px) scale(1)";
 
-  const activeProj = activeNode ? projectGeo(activeNode.geo.x, activeNode.geo.y) : null;
-  const activeOnFront = activeProj ? activeProj.pz > 0.05 : false;
-  // Ticker over the active pin if on front; else top-center fallback.
-  const tickerAnchorLeft = activeProj ? activeProj.px > EARTH_CX + 80 : false;
-  const tickerAnchorLow  = activeProj ? activeProj.py < EARTH_CY - 80 : false;
-  const tickerTransformX = activeOnFront
-    ? (tickerAnchorLeft ? "calc(-100% - 16px)" : "16px")
-    : "-50%";
-  const tickerTransformY = activeOnFront
-    ? (tickerAnchorLow ? "6px" : "-50%")
-    : "8px";
-  const tickerLeftPct = activeOnFront && activeProj ? (activeProj.px / 1000) * 100 : 50;
-  const tickerTopPct  = activeOnFront && activeProj ? (activeProj.py / 500) * 100 : 6;
+  const tickerAnchorLeft = activeNode ? activeNode.geo.x > 620 : false;
+  const tickerAnchorLow  = activeNode ? activeNode.geo.y < 130 : false;
+  const tickerTransformX = zoomed ? "-50%" : tickerAnchorLeft ? "calc(-100% - 14px)" : "14px";
+  const tickerTransformY = zoomed ? "20px" : tickerAnchorLow ? "4px" : "-50%";
+  const tickerLeftPct = zoomed ? 50 : activeNode ? (activeNode.geo.x / 1000) * 100 : 50;
+  const tickerTopPct  = zoomed ? 50 : activeNode ? (activeNode.geo.y / 500)  * 100 : 50;
 
   return (
     <div className={fill ? "absolute inset-0 w-full h-full" : "relative w-full"}
@@ -254,7 +233,7 @@ function WorldMap({
               target="_blank"
               rel="noopener noreferrer"
               title="Habere git"
-              className="relative rounded-xl border backdrop-blur-md px-3 py-2 block hover:brightness-125 transition-[filter] duration-200"
+              className="relative rounded-xl border backdrop-blur-md px-3 py-2 block pointer-events-auto hover:brightness-125 transition-[filter] duration-200"
               style={{
                 background:  "rgba(2,10,22,0.92)",
                 borderColor: activeSv.dot + "66",
@@ -295,247 +274,101 @@ function WorldMap({
         className="absolute inset-0 w-full h-full"
         xmlns="http://www.w3.org/2000/svg"
         aria-hidden="true"
+        style={animate ? { animation: "bnm-breathe 14s ease-in-out infinite" } : undefined}
       >
         <defs>
-          <radialGradient id="bnm-space" cx="50%" cy="50%" r="75%">
-            <stop offset="0%"   stopColor="#040716" />
-            <stop offset="55%"  stopColor="#020411" />
-            <stop offset="100%" stopColor="#000004" />
+          <radialGradient id="bnm-bg" cx="50%" cy="46%" r="68%">
+            <stop offset="0%"   stopColor="#0a1c34" />
+            <stop offset="60%"  stopColor="#051226" />
+            <stop offset="100%" stopColor="#020812" />
           </radialGradient>
-          <radialGradient id="bnm-ocean" cx="38%" cy="32%" r="78%">
-            <stop offset="0%"   stopColor="#1e63d6" />
-            <stop offset="45%"  stopColor="#0d3a82" />
-            <stop offset="80%"  stopColor="#061a3d" />
-            <stop offset="100%" stopColor="#020b1d" />
-          </radialGradient>
-          <radialGradient id="bnm-shine" cx="32%" cy="26%" r="55%">
-            <stop offset="0%"   stopColor="rgba(125,211,252,0.55)" />
-            <stop offset="45%"  stopColor="rgba(125,211,252,0.06)" />
-            <stop offset="100%" stopColor="rgba(125,211,252,0)" />
-          </radialGradient>
-          <radialGradient id="bnm-atmo" cx="50%" cy="50%" r="58%">
-            <stop offset="75%" stopColor="rgba(56,189,248,0)" />
-            <stop offset="90%" stopColor="rgba(56,189,248,0.42)" />
-            <stop offset="98%" stopColor="rgba(56,189,248,0.10)" />
-            <stop offset="100%" stopColor="rgba(56,189,248,0)" />
-          </radialGradient>
-          <linearGradient id="bnm-terminator" x1="0" y1="0" x2="1" y2="0">
-            <stop offset="0%"  stopColor="rgba(0,0,0,0)" />
-            <stop offset="55%" stopColor="rgba(0,0,0,0)" />
-            <stop offset="100%" stopColor="rgba(0,0,0,0.62)" />
-          </linearGradient>
-          <clipPath id="bnm-globe-clip">
-            <circle cx="500" cy="250" r="220" />
-          </clipPath>
           <filter id="bnm-landglow" x="-10%" y="-10%" width="120%" height="120%">
-            <feGaussianBlur stdDeviation="1" result="b" />
+            <feGaussianBlur stdDeviation="1.4" result="b" />
             <feMerge>
               <feMergeNode in="b" />
               <feMergeNode in="SourceGraphic" />
             </feMerge>
           </filter>
-          <filter id="bnm-bloom" x="-50%" y="-50%" width="200%" height="200%">
-            <feGaussianBlur stdDeviation="6" />
-          </filter>
         </defs>
 
-        {/* Deep-space background */}
-        <rect width="1000" height="500" fill="url(#bnm-space)" />
+        <rect width="1000" height="500" fill="url(#bnm-bg)" />
 
-        {/* Star field — deterministic (no React state, render-stable) */}
-        <g>
-          {Array.from({ length: 140 }, (_, i) => {
-            // Pseudo-random but stable
-            const sx = ((i * 73.31) % 1000);
-            const sy = ((i * 41.19) % 500);
-            const sr = 0.4 + ((i * 7) % 10) / 22;
-            const op = 0.35 + ((i * 13) % 100) / 220;
-            const dur = 2.4 + ((i * 11) % 50) / 12;
-            return (
-              <circle key={`s${i}`} cx={sx} cy={sy} r={sr} fill="#cfe7ff" opacity={op}>
-                {animate ? (
-                  <animate
-                    attributeName="opacity"
-                    values={`${op};${op * 0.25};${op}`}
-                    dur={`${dur.toFixed(2)}s`}
-                    repeatCount="indefinite"
-                  />
-                ) : null}
-              </circle>
-            );
-          })}
-        </g>
+        <g style={{
+          transform: mapTransform,
+          transition: animate ? "transform 1.3s cubic-bezier(.4,0,.2,1)" : undefined,
+          transformOrigin: "0 0",
+        }}>
 
-        {/* Distant orbit ring */}
-        <ellipse cx={EARTH_CX} cy={EARTH_CY} rx="335" ry="76" fill="none"
-                 stroke="rgba(56,189,248,0.18)" strokeWidth="0.5"
-                 strokeDasharray="6 8" transform={`rotate(-18 ${EARTH_CX} ${EARTH_CY})`} />
-        <ellipse cx={EARTH_CX} cy={EARTH_CY} rx="305" ry="48" fill="none"
-                 stroke="rgba(56,189,248,0.12)" strokeWidth="0.4"
-                 transform={`rotate(22 ${EARTH_CX} ${EARTH_CY})`} />
+          {Array.from({ length: 17 }, (_, i) => (
+            <line key={`v${i}`} x1={(i + 1) * 55.5} y1="0" x2={(i + 1) * 55.5} y2="500"
+              stroke="#13335c" strokeWidth="0.4" opacity="0.5" />
+          ))}
+          {Array.from({ length: 8 }, (_, i) => (
+            <line key={`h${i}`} x1="0" y1={(i + 1) * 55.5} x2="1000" y2={(i + 1) * 55.5}
+              stroke="#13335c" strokeWidth="0.4" opacity="0.5" />
+          ))}
+          <line x1="0" y1="250" x2="1000" y2="250" stroke="#22d3ee" strokeWidth="0.6" opacity="0.18" />
 
-        {/* Atmosphere outer glow (under sphere) */}
-        <circle cx={EARTH_CX} cy={EARTH_CY} r="252" fill="url(#bnm-atmo)" />
-        <circle cx={EARTH_CX} cy={EARTH_CY} r="235" fill="none"
-                stroke="rgba(56,189,248,0.55)" strokeWidth="2" filter="url(#bnm-bloom)" />
-        <circle cx={EARTH_CX} cy={EARTH_CY} r="228" fill="none"
-                stroke="rgba(125,211,252,0.6)" strokeWidth="0.8" />
-
-        {/* Sphere body — ocean radial gradient (3D shading) */}
-        <circle cx={EARTH_CX} cy={EARTH_CY} r={EARTH_R} fill="url(#bnm-ocean)" />
-
-        {/* Continents — clipped to sphere, slow horizontal rotation illusion */}
-        <g clipPath="url(#bnm-globe-clip)">
-          <g style={animate ? { animation: "bnm-earth-spin 90s linear infinite" } : undefined}>
-            {/* Two copies side-by-side for seamless wrap. WORLD_LAND_PATHS is
-                1000×500 equirectangular → scale into sphere bbox (440×440). */}
-            {[0, 1].map((wrap) => (
-              <g
-                key={`land-${wrap}`}
-                transform={`translate(${280 + wrap * 440} 30) scale(0.44 0.44)`}
-                filter="url(#bnm-landglow)"
-              >
-                {WORLD_LAND_PATHS.map((d, j) => (
-                  <path
-                    key={j}
-                    d={d}
-                    fill="#1f6d3a"
-                    stroke="#3aa56b"
-                    strokeWidth="1.4"
-                    strokeLinejoin="round"
-                    opacity="0.92"
-                  />
-                ))}
-              </g>
+          <g filter="url(#bnm-landglow)">
+            {WORLD_LAND_PATHS.map((d, i) => (
+              <path key={i} d={d}
+                fill="#0e2a4e" stroke="#2563a8" strokeWidth="1"
+                strokeLinejoin="round" opacity="0.92" />
             ))}
           </g>
 
-          {/* Latitude lines (foreshortened ellipses) */}
-          {[15, 35, 55, 75].map((a) => {
-            const rad = (a * Math.PI) / 180;
-            const ry = EARTH_R * Math.cos(rad);
-            const yOff = EARTH_R * Math.sin(rad);
+          {allPulse && nodes.length > 1 && (
+            <g opacity="0.35">
+              {nodes.slice(0, -1).map((n, i) => {
+                const next = nodes[i + 1];
+                return (
+                  <line key={`net${i}`}
+                    x1={n.geo.x} y1={n.geo.y} x2={next.geo.x} y2={next.geo.y}
+                    stroke="#22d3ee" strokeWidth="0.8" strokeDasharray="3 5"
+                    style={animate ? { animation: "bnm-dash 2.4s linear infinite" } : undefined}
+                  />
+                );
+              })}
+            </g>
+          )}
+
+          {nodes.map((node, i) => {
+            const { x, y, region } = node.geo;
+            const sv       = SEV[node.severity] ?? SEV.low;
+            const isActive = allPulse || i === activeIdx;
+            const strong   = !allPulse && i === activeIdx;
             return (
-              <g key={`lat${a}`}>
-                <ellipse cx={EARTH_CX} cy={EARTH_CY - yOff} rx={EARTH_R} ry={ry * 0.04}
-                         fill="none" stroke="rgba(125,211,252,0.16)" strokeWidth="0.5" />
-                <ellipse cx={EARTH_CX} cy={EARTH_CY + yOff} rx={EARTH_R} ry={ry * 0.04}
-                         fill="none" stroke="rgba(125,211,252,0.16)" strokeWidth="0.5" />
+              <g key={node.id} transform={`translate(${x},${y})`}
+                 style={{ transition: "opacity 0.6s ease" }} opacity={isActive ? 1 : 0.45}>
+                {animate && isActive && (
+                  <circle r={strong ? 26 : 18} fill="none" stroke={sv.dot} strokeWidth="1"
+                    opacity="0.30"
+                    style={{ animation: `bnm-pulse ${allPulse ? "1.6s" : "2s"} ease-in-out infinite` }}
+                  />
+                )}
+                {animate && strong && (
+                  <circle r="15" fill="none" stroke={sv.dot} strokeWidth="0.8" opacity="0.45"
+                    style={{ animation: "bnm-pulse 2s ease-in-out infinite", animationDelay: "0.6s" }}
+                  />
+                )}
+                <circle r={strong ? 9 : 5.5} fill="none" stroke={sv.dot}
+                  strokeWidth={strong ? 1.5 : 1} opacity="0.8" />
+                <circle r={strong ? 5 : 3} fill={sv.dot}
+                  style={{ filter: `drop-shadow(0 0 ${strong ? 10 : 5}px ${sv.dot})` }}
+                />
+                {!strong && isActive && (
+                  <text x="0" y="-11" textAnchor="middle" fontSize="7"
+                    fill="#94a3b8" fontFamily="monospace" opacity="0.55">
+                    {region.toUpperCase()}
+                  </text>
+                )}
               </g>
             );
           })}
-          {/* Equator */}
-          <ellipse cx={EARTH_CX} cy={EARTH_CY} rx={EARTH_R} ry="10" fill="none"
-                   stroke="rgba(56,189,248,0.28)" strokeWidth="0.6" />
 
-          {/* Longitude great circles */}
-          {[-60, -30, 0, 30, 60].map((deg) => {
-            const rx = EARTH_R * Math.abs(Math.cos((deg * Math.PI) / 180)) + 0.001;
-            return (
-              <ellipse key={`lon${deg}`} cx={EARTH_CX} cy={EARTH_CY} rx={rx} ry={EARTH_R}
-                       fill="none" stroke="rgba(125,211,252,0.15)" strokeWidth="0.5" />
-            );
-          })}
-          <line x1={EARTH_CX} y1={EARTH_CY - EARTH_R} x2={EARTH_CX} y2={EARTH_CY + EARTH_R}
-                stroke="rgba(56,189,248,0.22)" strokeWidth="0.6" />
-
-          {/* Specular highlight (sun reflection) */}
-          <circle cx={EARTH_CX} cy={EARTH_CY} r={EARTH_R} fill="url(#bnm-shine)" />
-          {/* Day/night terminator */}
-          <rect x={EARTH_CX - EARTH_R} y={EARTH_CY - EARTH_R} width={EARTH_R * 2} height={EARTH_R * 2}
-                fill="url(#bnm-terminator)" />
         </g>
 
-        {/* Sphere rim outline (above clip) */}
-        <circle cx={EARTH_CX} cy={EARTH_CY} r={EARTH_R} fill="none"
-                stroke="rgba(125,211,252,0.45)" strokeWidth="0.8" />
-
-        {/* Network arcs in all-pulse — projected onto sphere */}
-        {allPulse && nodes.length > 1 && (
-          <g opacity="0.6">
-            {nodes.slice(0, -1).map((n, i) => {
-              const a = projectGeo(n.geo.x, n.geo.y);
-              const b = projectGeo(nodes[i + 1].geo.x, nodes[i + 1].geo.y);
-              if (a.pz < -0.1 || b.pz < -0.1) return null;
-              // Arc midpoint pulled away from center for "above surface" effect
-              const mx = (a.px + b.px) / 2;
-              const my = (a.py + b.py) / 2;
-              const dx = mx - EARTH_CX;
-              const dy = my - EARTH_CY;
-              const dlen = Math.hypot(dx, dy) || 1;
-              const cx = EARTH_CX + (dx / dlen) * (EARTH_R + 22);
-              const cy = EARTH_CY + (dy / dlen) * (EARTH_R + 22);
-              return (
-                <path
-                  key={`net${i}`}
-                  d={`M ${a.px} ${a.py} Q ${cx} ${cy} ${b.px} ${b.py}`}
-                  fill="none"
-                  stroke="#22d3ee"
-                  strokeWidth="0.9"
-                  strokeDasharray="4 6"
-                  opacity="0.55"
-                  style={animate ? { animation: "bnm-dash 2.4s linear infinite" } : undefined}
-                />
-              );
-            })}
-          </g>
-        )}
-
-        {/* News pins projected on globe surface */}
-        {nodes.map((node, i) => {
-          const proj = projectGeo(node.geo.x, node.geo.y);
-          const onFront = proj.pz > 0.05;
-          const sv = SEV[node.severity] ?? SEV.low;
-          const isActive = allPulse || i === activeIdx;
-          const strong = !allPulse && i === activeIdx;
-          const depthOp = onFront ? 1 : 0.25;
-          return (
-            <g
-              key={node.id}
-              transform={`translate(${proj.px},${proj.py})`}
-              style={{ transition: "opacity 0.6s ease" }}
-              opacity={(isActive ? 1 : 0.55) * depthOp}
-            >
-              {animate && isActive && onFront && (
-                <circle r={strong ? 28 : 20} fill="none" stroke={sv.dot} strokeWidth="1.2"
-                  opacity="0.35"
-                  style={{ animation: `bnm-pulse ${allPulse ? "1.6s" : "2s"} ease-in-out infinite` }}
-                />
-              )}
-              {animate && strong && onFront && (
-                <circle r="14" fill="none" stroke={sv.dot} strokeWidth="0.9" opacity="0.55"
-                  style={{ animation: "bnm-pulse 2s ease-in-out infinite", animationDelay: "0.6s" }}
-                />
-              )}
-              <circle r={strong ? 9 : 5.5} fill="none" stroke={sv.dot}
-                strokeWidth={strong ? 1.5 : 1} opacity="0.85" />
-              <circle r={strong ? 5 : 3} fill={sv.dot}
-                style={{ filter: `drop-shadow(0 0 ${strong ? 12 : 6}px ${sv.dot})` }}
-              />
-              {!strong && isActive && onFront && (
-                <text x="0" y="-11" textAnchor="middle" fontSize="7"
-                  fill="rgba(203,213,225,0.7)" fontFamily="monospace">
-                  {node.geo.region.toUpperCase()}
-                </text>
-              )}
-            </g>
-          );
-        })}
-
-        {/* Orbiting satellite */}
-        {animate && (
-          <g
-            style={{
-              animation: "bnm-orbit 22s linear infinite",
-              transformOrigin: `${EARTH_CX}px ${EARTH_CY}px`,
-            }}
-          >
-            <line x1={EARTH_CX} y1={EARTH_CY - 270} x2={EARTH_CX} y2={EARTH_CY - 256}
-                  stroke="rgba(56,189,248,0.7)" strokeWidth="0.6" />
-            <circle cx={EARTH_CX} cy={EARTH_CY - 263} r="2.5" fill="#67e8f9"
-                    style={{ filter: "drop-shadow(0 0 6px rgba(103,232,249,0.9))" }} />
-          </g>
-        )}
+        <rect width="1000" height="500" fill="none" stroke="#22d3ee" strokeWidth="1" opacity="0.10" />
       </svg>
     </div>
   );
@@ -557,11 +390,7 @@ function SideNewsCard({
             : "bg-white/[0.03] border-white/10 hover:border-white/30"
       }`}
     >
-      <button
-        type="button"
-        onClick={onClick}
-        className="w-full text-left px-3 py-2.5 pr-8"
-      >
+      <button type="button" onClick={onClick} className="w-full text-left px-3 py-2.5 pr-8">
         <div className="flex items-center gap-1.5 mb-1">
           <span className={`rounded px-1 py-0.5 text-[10px] font-mono font-black uppercase tracking-widest border ${sv.badge}`}>
             {sv.label}
@@ -582,8 +411,8 @@ function SideNewsCard({
         rel="noopener noreferrer"
         title="Habere git"
         aria-label="Habere git"
-        className="absolute right-1.5 top-1.5 rounded border border-white/15 bg-black/30 px-1 py-0.5 text-[10px] text-white/55 hover:border-cyan-400/60 hover:text-cyan-200"
         onClick={(e) => e.stopPropagation()}
+        className="absolute right-1.5 top-1.5 rounded border border-white/15 bg-black/30 px-1 py-0.5 text-[10px] text-white/55 hover:border-cyan-400/60 hover:text-cyan-200"
       >
         ↗
       </a>
@@ -691,14 +520,12 @@ export function NewsMapRadarLayer({ headlines }: Props) {
       data-cycle-mode={phase.mode}
     >
       <style>{`
-        @keyframes bnm-pulse      { 0%,100%{opacity:.28;transform:scale(1)} 50%{opacity:.70;transform:scale(1.45)} }
-        @keyframes bnm-scan       { from{left:-90px} to{left:100%} }
-        @keyframes bnm-dash       { to{stroke-dashoffset:-16} }
-        @keyframes bnm-breathe    { 0%,100%{transform:scale(1)} 50%{transform:scale(1.012)} }
-        @keyframes bnm-fadein     { from{opacity:0;transform:translateY(3px)} to{opacity:1;transform:none} }
-        @keyframes bnm-ticker     { 0%,12%{transform:translateX(0)} 78%,100%{transform:translateX(-55%)} }
-        @keyframes bnm-earth-spin { from{transform:translateX(0)} to{transform:translateX(-440px)} }
-        @keyframes bnm-orbit      { from{transform:rotate(0)} to{transform:rotate(360deg)} }
+        @keyframes bnm-pulse   { 0%,100%{opacity:.28;transform:scale(1)} 50%{opacity:.70;transform:scale(1.45)} }
+        @keyframes bnm-scan    { from{left:-90px} to{left:100%} }
+        @keyframes bnm-dash    { to{stroke-dashoffset:-16} }
+        @keyframes bnm-breathe { 0%,100%{transform:scale(1)} 50%{transform:scale(1.012)} }
+        @keyframes bnm-fadein  { from{opacity:0;transform:translateY(3px)} to{opacity:1;transform:none} }
+        @keyframes bnm-ticker  { 0%,12%{transform:translateX(0)} 78%,100%{transform:translateX(-55%)} }
       `}</style>
 
       <div className="flex items-center justify-between px-4 py-3 border-b border-white/10 bg-black/30">

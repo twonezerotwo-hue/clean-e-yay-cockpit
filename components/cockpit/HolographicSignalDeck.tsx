@@ -234,22 +234,75 @@ function actionBadge(c: AgentBriefCandidate): { label: string; cls: string } {
   return { label: "● WATCH", cls: "bg-cyan-500/10 text-cyan-200/90 border-cyan-400/30" };
 }
 
+function cardTheme(score: number, direction: Direction) {
+  if (direction === "bullish") {
+    return {
+      accent: "#34d399",
+      accent2: "#22d3ee",
+      shadow: "rgba(52,211,153,0.58)",
+      foil: "rgba(16,185,129,0.18)",
+      label: "RISK-ON",
+    };
+  }
+  if (direction === "bearish") {
+    return {
+      accent: "#fb7185",
+      accent2: "#f59e0b",
+      shadow: "rgba(251,113,133,0.55)",
+      foil: "rgba(244,63,94,0.18)",
+      label: "RISK-OFF",
+    };
+  }
+  if (score >= 55) {
+    return {
+      accent: "#22d3ee",
+      accent2: "#a78bfa",
+      shadow: "rgba(34,211,238,0.55)",
+      foil: "rgba(34,211,238,0.16)",
+      label: "WATCH",
+    };
+  }
+  return {
+    accent: "#94a3b8",
+    accent2: "#38bdf8",
+    shadow: "rgba(148,163,184,0.38)",
+    foil: "rgba(148,163,184,0.12)",
+    label: "IDLE",
+  };
+}
+
+function directionLabel(direction: Direction) {
+  if (direction === "bullish") return "BULL";
+  if (direction === "bearish") return "BEAR";
+  return "NEUTRAL";
+}
+
+function archetype(row: DeckRow) {
+  const action = row.best.candidate_action?.toUpperCase() ?? "";
+  if (row.best.actionable) return "EXECUTION";
+  if (action.includes("BLOCK") || action.includes("AVOID")) return "LOCKED";
+  if (row.perTf.length >= 4) return "MULTI-TF";
+  return "SCOUT";
+}
+
 // ── 3D card ───────────────────────────────────────────────────────────────────
 
 function deckTransform(offset: number): CSSProperties {
   const abs = Math.abs(offset);
-  // 3D fan-out: center büyük, kenarda küçük + döndürülmüş + uzakta
-  const tx = offset === 0 ? 0 : (abs === 1 ? 200 : abs === 2 ? 360 : 480) * (offset > 0 ? 1 : -1);
-  const tz = -abs * 80;
-  const ry = offset * -10;
-  const scale = abs === 0 ? 1.04 : abs === 1 ? 0.88 : abs === 2 ? 0.74 : 0.62;
-  const op = abs === 0 ? 1 : abs === 1 ? 0.82 : abs === 2 ? 0.5 : 0.22;
+  const tx = offset === 0 ? 0 : (abs === 1 ? 230 : abs === 2 ? 410 : 560) * (offset > 0 ? 1 : -1);
+  const ty = abs === 0 ? -50 : abs === 1 ? -48 : -46;
+  const tz = offset === 0 ? 88 : -abs * 120;
+  const ry = offset * -18;
+  const rz = offset * 2.5;
+  const rx = abs === 0 ? -4 : -1;
+  const scale = abs === 0 ? 1.12 : abs === 1 ? 0.86 : abs === 2 ? 0.68 : 0.52;
+  const op = abs === 0 ? 1 : abs === 1 ? 0.8 : abs === 2 ? 0.42 : 0.15;
   return {
-    transform: `translateX(${tx}px) translateZ(${tz}px) rotateY(${ry}deg) scale(${scale})`,
+    transform: `translate3d(calc(-50% + ${tx}px), ${ty}%, ${tz}px) rotateX(${rx}deg) rotateY(${ry}deg) rotateZ(${rz}deg) scale(${scale})`,
     opacity: op,
     zIndex: 200 - abs,
     pointerEvents: abs > 2 ? "none" : "auto",
-    filter: abs >= 2 ? "blur(1px)" : "none",
+    filter: abs >= 2 ? "blur(1.4px) saturate(0.65)" : "none",
   };
 }
 
@@ -267,73 +320,90 @@ function DeckCard({
   const value = round(row.best.score);
   const status = statusBadge(row.best);
   const action = actionBadge(row.best);
-  const glow =
-    value >= 75 ? "rgba(52,211,153,0.55)"
-    : value >= 55 ? "rgba(34,211,238,0.55)"
-    : value >= 35 ? "rgba(251,191,36,0.45)"
-    : "rgba(148,163,184,0.35)";
+  const direction = (row.best.direction ?? "neutral") as Direction;
+  const theme = cardTheme(value, direction);
+  const style = {
+    ...deckTransform(offset),
+    "--fut-accent": theme.accent,
+    "--fut-accent-2": theme.accent2,
+    "--fut-shadow": theme.shadow,
+    "--fut-foil": theme.foil,
+    transitionTimingFunction: "cubic-bezier(0.22, 1, 0.36, 1)",
+    transformStyle: "preserve-3d",
+    borderColor: active ? theme.accent : "rgba(71,85,105,0.38)",
+    boxShadow: active
+      ? `0 28px 80px -18px ${theme.shadow}, 0 0 0 1px ${theme.accent}55, inset 0 1px 0 rgba(255,255,255,0.12)`
+      : "0 12px 34px rgba(0,0,0,0.46), inset 0 1px 0 rgba(255,255,255,0.05)",
+  } as CSSProperties;
+
   return (
     <button
       type="button"
       onClick={onSelect}
       aria-pressed={active}
-      className="absolute top-1/2 left-1/2 w-[228px] -translate-x-1/2 -translate-y-1/2 rounded-xl border backdrop-blur-md text-left transition-all duration-700"
-      style={{
-        ...deckTransform(offset),
-        transitionTimingFunction: "cubic-bezier(0.22, 1, 0.36, 1)",
-        transformStyle: "preserve-3d",
-        background:
-          active
-            ? "linear-gradient(150deg, rgba(15,23,42,0.94), rgba(2,8,23,0.96))"
-            : "linear-gradient(155deg, rgba(15,23,42,0.78), rgba(2,8,23,0.88))",
-        borderColor: active ? "rgba(34,211,238,0.55)" : "rgba(71,85,105,0.35)",
-        boxShadow: active
-          ? `0 18px 50px -12px ${glow}, 0 0 0 1px rgba(34,211,238,0.18), inset 0 1px 0 rgba(255,255,255,0.05)`
-          : "0 6px 18px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.03)",
-      }}
+      className={`fut-signal-card absolute left-1/2 top-1/2 w-[260px] border text-left transition-all duration-700 ${
+        active ? "fut-signal-card-active" : ""
+      }`}
+      style={style}
     >
-      {/* top accent line */}
-      <div
-        aria-hidden="true"
-        className="absolute inset-x-0 top-0 h-px"
-        style={{
-          background: `linear-gradient(90deg, transparent, ${active ? "rgba(34,211,238,0.95)" : "rgba(148,163,184,0.5)"}, transparent)`,
-        }}
-      />
-      <div className="p-3 space-y-2">
-        {/* Header row */}
-        <div className="flex items-center gap-2">
-          <span className="inline-flex h-6 w-6 items-center justify-center rounded bg-slate-700/40 text-sm text-slate-100">
-            {row.icon}
-          </span>
-          <span className="font-display text-[13px] font-semibold tracking-wide text-slate-100">
-            {row.symbol}
-          </span>
-          <span
-            aria-hidden="true"
-            className="ml-auto h-2 w-2 rounded-full"
-            style={{ background: glow, boxShadow: `0 0 8px ${glow}` }}
-          />
+      <div className="fut-card-depth" aria-hidden="true" />
+      <div className="fut-card-shine" aria-hidden="true" />
+      <div className="fut-card-grid" aria-hidden="true" />
+      <div className="relative z-10 p-4">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="fut-rating font-display text-[42px] font-black leading-none">
+              {value}
+            </p>
+            <p className="mt-1 text-[9px] font-semibold uppercase tracking-[0.28em] text-slate-300/80">
+              {theme.label}
+            </p>
+          </div>
+          <div className="text-right">
+            <span className={`inline-flex rounded border px-1.5 py-0.5 text-[9px] uppercase tracking-widest ${status.cls}`}>
+              {status.label}
+            </span>
+            <p className="mt-2 text-[10px] uppercase tracking-[0.24em] text-slate-400">
+              {archetype(row)}
+            </p>
+          </div>
         </div>
 
-        {/* Price */}
-        <div>
-          <p className="font-display text-[17px] font-semibold leading-tight text-slate-100">
-            {fmtPx(row.price)} <span className="text-[10px] text-slate-400">{row.unit}</span>
+        <div className="relative my-4 flex justify-center">
+          <div className="fut-orbit" aria-hidden="true" />
+          <div className="fut-asset-emblem">
+            <span className="relative z-10">{row.icon}</span>
+          </div>
+        </div>
+
+        <div className="text-center">
+          <p className="font-display text-[21px] font-black tracking-wide text-slate-50">
+            {row.symbol}
+          </p>
+          <p className="mt-1 text-[11px] uppercase tracking-[0.22em] text-slate-400">
+            {row.name}
           </p>
         </div>
 
-        {/* Status badge */}
-        <div>
-          <span className={`inline-block rounded border px-1.5 py-0.5 text-[9px] uppercase tracking-widest ${status.cls}`}>
-            {status.label}
-          </span>
+        <div className="mt-4 grid grid-cols-2 gap-2">
+          <div className="fut-stat-box">
+            <p className="text-[9px] uppercase tracking-widest text-slate-500">Price</p>
+            <p className="font-mono text-[12px] text-slate-100">
+              {fmtPx(row.price)}
+            </p>
+            <p className="text-[9px] text-slate-500">{row.unit}</p>
+          </div>
+          <div className="fut-stat-box">
+            <p className="text-[9px] uppercase tracking-widest text-slate-500">Dir</p>
+            <p className="font-mono text-[12px] uppercase text-slate-100">
+              {directionLabel(direction)}
+            </p>
+            <p className="text-[9px] text-slate-500">{row.perTf.length} TF</p>
+          </div>
         </div>
 
-        {/* Ring + action */}
-        <div className="flex items-center justify-between pt-1.5 border-t border-white/5">
-          <ScoreRing score={value} size={42} active={active} />
-          <span className={`rounded border px-2 py-1 text-[10px] font-medium uppercase tracking-wider ${action.cls}`}>
+        <div className="mt-4 border-t border-white/10 pt-3">
+          <span className={`flex items-center justify-center rounded border px-2 py-1.5 text-[10px] font-semibold uppercase tracking-[0.18em] ${action.cls}`}>
             {action.label}
           </span>
         </div>
@@ -580,13 +650,13 @@ export function HolographicSignalDeck({ brief }: { brief: AgentBrief }) {
       </div>
 
       {/* Body grid */}
-      <div className="grid gap-0 lg:grid-cols-[minmax(0,1fr)_360px]">
+      <div className="grid gap-0 lg:grid-cols-[minmax(0,1fr)_390px]">
         {/* Left — 3D deck */}
         <div
-          className="relative min-h-[440px] overflow-hidden border-r border-cyan-500/12"
+          className="relative min-h-[600px] overflow-hidden border-r border-cyan-500/12"
           style={{
             background:
-              "radial-gradient(circle at 50% 92%, rgba(34,211,238,0.22), transparent 38%), linear-gradient(180deg, rgba(4,14,28,0.78), rgba(2,5,13,0.96))",
+              "radial-gradient(circle at 50% 74%, rgba(34,211,238,0.24), transparent 34%), radial-gradient(circle at 50% 8%, rgba(167,139,250,0.12), transparent 34%), linear-gradient(180deg, rgba(4,14,28,0.78), rgba(2,5,13,0.96))",
           }}
         >
           {/* Holographic grid background */}
@@ -651,8 +721,8 @@ export function HolographicSignalDeck({ brief }: { brief: AgentBrief }) {
 
           {/* 3D deck stage */}
           <div
-            className="relative mx-auto h-[280px] mt-10"
-            style={{ perspective: "2000px", perspectiveOrigin: "50% 48%" }}
+            className="relative mx-auto h-[390px] mt-5"
+            style={{ perspective: "2400px", perspectiveOrigin: "50% 42%" }}
           >
             {rows.map((r, i) => {
               const n = rows.length;
@@ -672,7 +742,7 @@ export function HolographicSignalDeck({ brief }: { brief: AgentBrief }) {
           </div>
 
           {/* Pagination dots */}
-          <div className="relative z-10 mt-4 flex justify-center gap-1.5">
+          <div className="relative z-10 -mt-1 flex justify-center gap-1.5">
             {rows.map((r, i) => (
               <button
                 key={r.symbol}
@@ -687,7 +757,7 @@ export function HolographicSignalDeck({ brief }: { brief: AgentBrief }) {
           </div>
 
           {/* AI Trading Operations podium */}
-          <div className="relative z-10 mt-3 mb-5 mx-auto h-[110px] w-[min(560px,82%)]">
+          <div className="relative z-10 mt-4 mb-5 mx-auto h-[120px] w-[min(620px,86%)]">
             {/* expanding rings */}
             <div
               aria-hidden="true"
@@ -720,7 +790,7 @@ export function HolographicSignalDeck({ brief }: { brief: AgentBrief }) {
         </div>
 
         {/* Right — Sinyal Detayı */}
-        <aside className="relative min-h-[440px] bg-black/25 p-3">
+        <aside className="relative min-h-[600px] bg-black/25 p-3">
           <div className="space-y-3.5">
             <div className="flex items-center gap-2">
               <span className="h-1.5 w-1.5 rounded-full bg-cyan-300 shadow-[0_0_8px_rgba(34,211,238,0.8)]" />

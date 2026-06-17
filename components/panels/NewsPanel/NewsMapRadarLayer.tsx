@@ -17,18 +17,23 @@ import {
   geoForRegion,
   type GeoPoint,
 } from "@/lib/news-region-map";
+import { resolveNewsLink, type NewsLink } from "@/lib/news-links";
 import type { NewsHeadline } from "@/types/generated/api";
-
-// Backend henüz NewsHeadline.url alanı dönmüyorsa Google News fallback.
-function urlForHeadline(h: NewsHeadline): string {
-  const raw = (h as unknown as { url?: string }).url;
-  if (raw && /^https?:\/\//.test(raw)) return raw;
-  return `https://news.google.com/search?q=${encodeURIComponent(h.title)}`;
-}
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 type Severity = "critical" | "high" | "medium" | "low";
+
+type AssetImpactView = {
+  asset: string;
+  dir: number;
+  arrow: string;
+  label: string;
+  tone: string;
+  border: string;
+  note: string;
+  detail: string;
+};
 
 interface EnrichedNode {
   id:       string;
@@ -37,10 +42,10 @@ interface EnrichedNode {
   severity: Severity;
   category: string;
   age_min:  number | null;
-  assets:   { asset: string; up: boolean; note: string }[];
+  assets:   AssetImpactView[];
   geo:      GeoPoint;
   actor:    { name: string; short: string; img?: string } | null;
-  url:      string;
+  link:     NewsLink;
 }
 
 // Tanıdık aktör tespiti — headline metninden deterministik; fotoğraf uydurmaz.
@@ -97,12 +102,61 @@ function toAgeMin(ts: string): number | null {
   return Math.max(0, Math.round(ms / 60_000));
 }
 
-function adaptImpact(impact: Record<string, number> | undefined) {
+function impactDetail(asset: string, dir: number) {
+  const key = asset.toUpperCase();
+  if (dir === 0) return "Nötr izleme: haber varlığı işaretliyor ama yön üretmiyor.";
+  const positive = dir > 0;
+  if (key.includes("DXY")) {
+    return positive
+      ? "Dolar lehine baskı: riskli varlıklar ve emtia için sıkılaşma etkisi izlenir."
+      : "Dolar zayıflama alanı: risk iştahı ve emtia tarafı rahatlayabilir.";
+  }
+  if (key.includes("VIX")) {
+    return positive
+      ? "Volatilite/risk primi yükselme riski; pozisyon açma iştahını kısabilir."
+      : "Volatilite gevşemesi; risk algısı sakinleşiyor olabilir.";
+  }
+  if (key.includes("BRENT") || key.includes("OIL")) {
+    return positive
+      ? "Enerji arz primi yukarı; enflasyon ve petrol hassas varlıklar izlenir."
+      : "Petrol risk primi gevşiyor; enerji baskısı azalabilir.";
+  }
+  if (key.includes("GOLD") || key.includes("XAU")) {
+    return positive
+      ? "Güvenli liman/hedge talebi artabilir; reel faiz ve DXY ile birlikte okunur."
+      : "Güvenli liman talebi zayıflayabilir; risk-on akışla birlikte izlenir.";
+  }
+  if (key.includes("BTC") || key.includes("ETH") || key.includes("CRYPTO")) {
+    return positive
+      ? "Kripto risk iştahı lehine bağlam; yine de tek başına trade sinyali değildir."
+      : "Kripto üzerinde baskı; likidite ve risk iştahı teyidi gerekir.";
+  }
+  if (key.includes("SPY") || key.includes("NDX") || key.includes("NASDAQ")) {
+    return positive
+      ? "Hisse/risk-on lehine bağlam; makro gate ile birlikte doğrulanmalı."
+      : "Hisse/risk-on üzerinde baskı; defansif gate güçlenebilir.";
+  }
+  if (key.includes("HYG") || key.includes("CREDIT")) {
+    return positive
+      ? "Kredi iştahı lehine; spread baskısı azalıyor olabilir."
+      : "Kredi riski artıyor olabilir; risk-off okuması güçlenir.";
+  }
+  return positive
+    ? "Yukarı yönlü haber etkisi; teyit için teknik ve risk gate beklenir."
+    : "Aşağı yönlü haber etkisi; teyit için teknik ve risk gate beklenir.";
+}
+
+function adaptImpact(impact: Record<string, number> | undefined): AssetImpactView[] {
   if (!impact) return [];
   return Object.entries(impact).map(([asset, dir]) => ({
     asset,
-    up:   dir < 0,                              // negative sentiment → risk-on
-    note: dir > 0 ? "risk yukarı" : dir < 0 ? "baskı" : "nötr",
+    dir,
+    arrow: dir > 0 ? "↑" : dir < 0 ? "↓" : "→",
+    label: dir > 0 ? "Yukarı baskı" : dir < 0 ? "Aşağı baskı" : "Nötr izleme",
+    tone: dir > 0 ? "text-red-300" : dir < 0 ? "text-cyan-300" : "text-slate-300",
+    border: dir > 0 ? "border-red-600/40" : dir < 0 ? "border-cyan-700/40" : "border-white/15",
+    note: dir > 0 ? "risk/prim artışı" : dir < 0 ? "baskı gevşemesi" : "yönsüz bağlam",
+    detail: impactDetail(asset, dir),
   }));
 }
 
@@ -128,7 +182,7 @@ function enrichHeadlines(headlines: NewsHeadline[]): EnrichedNode[] {
       assets,
       geo:      geoForRegion(classifyHeadlineRegion(text, h.region)),
       actor:    detectActor(h, text),
-      url:      urlForHeadline(h),
+      link:     resolveNewsLink(h),
     };
   });
 }
@@ -262,10 +316,13 @@ function WorldMap({
 
             {/* Glass speech-pill */}
             <a
-              href={activeNode.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              title="Habere git"
+              href={activeNode.link.href}
+              target={activeNode.link.href === "#" ? undefined : "_blank"}
+              rel={activeNode.link.href === "#" ? undefined : "noopener noreferrer"}
+              title={activeNode.link.title}
+              onClick={(e) => {
+                if (activeNode.link.href === "#") e.preventDefault();
+              }}
               className="relative rounded-xl border backdrop-blur-md px-3 py-2 block pointer-events-auto hover:brightness-125 transition-[filter] duration-200"
               style={{
                 background:   "rgba(2,10,22,0.92)",
@@ -282,6 +339,7 @@ function WorldMap({
                  style={{ color: activeSv.dot, opacity: 0.85 }}>
                 {activeNode.geo.region} · {activeNode.source}
                 {activeNode.age_min !== null ? ` · ${activeNode.age_min}dk` : ""}
+                {activeNode.link.host ? ` · ${activeNode.link.host}` : ""}
               </p>
               <div className="overflow-hidden" style={{ maxWidth: "100%" }}>
                 <span
@@ -446,26 +504,33 @@ function SideNewsCard({
         <p className="text-[10px] font-mono text-white/40 mt-0.5">📍 {node.geo.region} · {node.category}</p>
       </button>
       <a
-        href={node.url}
-        target="_blank"
-        rel="noopener noreferrer"
-        title="Habere git"
-        aria-label="Habere git"
-        onClick={(e) => e.stopPropagation()}
+        href={node.link.href}
+        target={node.link.href === "#" ? undefined : "_blank"}
+        rel={node.link.href === "#" ? undefined : "noopener noreferrer"}
+        title={node.link.title}
+        aria-label={node.link.title}
+        onClick={(e) => {
+          e.stopPropagation();
+          if (node.link.href === "#") e.preventDefault();
+        }}
         className="absolute right-1.5 top-1.5 rounded border border-white/15 bg-black/30 px-1 py-0.5 text-[10px] text-white/55 hover:border-cyan-400/60 hover:text-cyan-200"
       >
-        ↗
+        {node.link.kind === "direct" ? "↗" : "ara"}
       </a>
     </div>
   );
 }
 
-function AssetCard({ a }: { a: { asset: string; up: boolean; note: string } }) {
+function AssetCard({ a }: { a: AssetImpactView }) {
   const ICONS: Record<string, { icon: string; color: string }> = {
     BRENT:  { icon: "🛢", color: "text-orange-300" },
     GOLD:   { icon: "Au", color: "text-amber-300" },
+    XAUUSD: { icon: "Au", color: "text-amber-300" },
+    XAGUSD: { icon: "Ag", color: "text-slate-300" },
     SILVER: { icon: "Ag", color: "text-slate-300" },
     BTC:    { icon: "₿",  color: "text-purple-300" },
+    BTCUSD: { icon: "₿",  color: "text-purple-300" },
+    ETHUSD: { icon: "Ξ",  color: "text-purple-200" },
     DXY:    { icon: "$",  color: "text-cyan-300" },
     VIX:    { icon: "⚡", color: "text-red-300" },
     SPY:    { icon: "📊", color: "text-blue-300" },
@@ -473,18 +538,22 @@ function AssetCard({ a }: { a: { asset: string; up: boolean; note: string } }) {
   };
   const meta = ICONS[a.asset] ?? { icon: a.asset.slice(0, 2), color: "text-slate-300" };
   return (
-    <div className={`rounded-xl border px-3 py-2 bg-white/[0.04] backdrop-blur-sm ${
-      a.up ? "border-red-600/40" : "border-cyan-700/40"
-    }`}>
-      <div className="flex items-center gap-2">
-        <span className={`text-sm font-bold shrink-0 ${meta.color}`}>{meta.icon}</span>
+    <div className={`rounded-xl border px-3 py-2.5 bg-white/[0.04] backdrop-blur-sm ${a.border}`}>
+      <div className="flex items-start gap-2">
+        <span className={`mt-0.5 text-sm font-bold shrink-0 ${meta.color}`}>{meta.icon}</span>
         <div className="flex-1 min-w-0">
-          <p className="text-[10px] font-mono font-bold text-white/80">{a.asset}</p>
-          <p className="text-[10px] font-mono text-white/50 truncate">{a.note}</p>
+          <div className="flex items-center gap-2">
+            <p className="text-[10px] font-mono font-bold text-white/85">{a.asset}</p>
+            <span className={`text-[10px] font-mono font-semibold ${a.tone}`}>
+              {a.arrow} {a.label}
+            </span>
+          </div>
+          <p className="mt-1 text-[10px] font-mono text-white/50">{a.note}</p>
+          <p className="mt-1 text-[10px] leading-snug text-white/70">{a.detail}</p>
+          <p className="mt-1 text-[9px] font-mono uppercase tracking-wider text-white/35">
+            Haber etkisi · emir/sinyal değil
+          </p>
         </div>
-        <span className={`text-[10px] font-mono font-semibold shrink-0 ${a.up ? "text-red-300" : "text-cyan-300"}`}>
-          {a.up ? "↑ risk" : "↓ baskı"}
-        </span>
       </div>
     </div>
   );
@@ -611,7 +680,7 @@ export function NewsMapRadarLayer({ headlines, onDegraded: _onDegraded }: Props)
           />
 
           {/* ÖN KATMAN: yan kolonlar + alt bilgi şeridi */}
-          <div className="relative z-10 grid grid-cols-[190px_minmax(0,1fr)_175px] min-h-[440px] pointer-events-none">
+          <div className="relative z-10 grid grid-cols-[210px_minmax(0,1fr)_280px] min-h-[440px] pointer-events-none">
 
           {/* SOL: haber kartları */}
           <div className="pointer-events-auto border-r border-white/10 p-3 flex flex-col gap-2 bg-black/45 backdrop-blur-[2px] overflow-y-auto max-h-[460px]">
@@ -652,10 +721,15 @@ export function NewsMapRadarLayer({ headlines, onDegraded: _onDegraded }: Props)
           </div>
 
           {/* SAĞ: etkilenen varlıklar */}
-          <div className="pointer-events-auto border-l border-white/10 p-3 flex flex-col gap-2 bg-black/45 backdrop-blur-[2px]">
-            <p className="text-[10px] font-mono text-white/50 uppercase tracking-widest shrink-0">
-              Etkilenen Varlıklar
-            </p>
+          <div className="pointer-events-auto border-l border-white/10 p-3 flex flex-col gap-2 bg-black/45 backdrop-blur-[2px] overflow-y-auto max-h-[460px]">
+            <div className="shrink-0">
+              <p className="text-[10px] font-mono text-white/60 uppercase tracking-widest">
+                Etkilenen Varlıklar
+              </p>
+              <p className="mt-0.5 text-[10px] leading-snug text-white/40">
+                Backend `asset_impact` alanının haber bazlı yorumu. Yön, karar değil bağlamdır.
+              </p>
+            </div>
             {impacts.length > 0
               ? impacts.map((a, i) => <AssetCard key={i} a={a} />)
               : <p className="text-[10px] font-mono text-white/50/50 italic">Varlık etkisi yok.</p>
@@ -678,7 +752,7 @@ export function NewsMapRadarLayer({ headlines, onDegraded: _onDegraded }: Props)
             </p>
             <p className="text-xs text-white/80 leading-snug">{activeNode.headline}</p>
           </div>
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-1 gap-2">
             {impacts.slice(0, 4).map((a, i) => <AssetCard key={i} a={a} />)}
           </div>
           <div className="flex gap-2 flex-wrap justify-center">

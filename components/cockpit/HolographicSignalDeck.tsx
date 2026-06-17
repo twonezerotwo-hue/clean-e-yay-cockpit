@@ -37,7 +37,7 @@ function round(n: number | null | undefined): number {
 
 function scoreTone(value: number): string {
   if (value >= 75) return "text-emerald-300";
-  if (value >= 55) return "text-cyan-300";
+  if (value >= 55) return "text-teal-300";
   if (value >= 35) return "text-amber-300";
   return "text-slate-400";
 }
@@ -157,7 +157,7 @@ function ScoreRing({
   const c = 2 * Math.PI * r;
   const pct = Math.max(0, Math.min(100, score));
   const tone =
-    pct >= 75 ? "#34d399" : pct >= 55 ? "#22d3ee" : pct >= 35 ? "#fbbf24" : "#94a3b8";
+    pct >= 75 ? "#22c55e" : pct >= 55 ? "#14b8a6" : pct >= 35 ? "#fbbf24" : "#94a3b8";
   return (
     <svg
       width={size}
@@ -231,16 +231,16 @@ function actionBadge(c: AgentBriefCandidate): { label: string; cls: string } {
   if (actionable && dir === "bearish") return { label: "▼ SHORT", cls: "bg-rose-500/20 text-rose-100 border-rose-400/50" };
   if (dir === "bullish") return { label: "▲ LONG SETUP", cls: "bg-emerald-500/10 text-emerald-200/90 border-emerald-400/30" };
   if (dir === "bearish") return { label: "▼ SHORT SETUP", cls: "bg-rose-500/10 text-rose-200/90 border-rose-400/30" };
-  return { label: "● WATCH", cls: "bg-cyan-500/10 text-cyan-200/90 border-cyan-400/30" };
+  return { label: "● WATCH", cls: "bg-teal-500/10 text-teal-100/85 border-teal-300/25" };
 }
 
 function cardTheme(score: number, direction: Direction) {
   if (direction === "bullish") {
     return {
-      accent: "#34d399",
-      accent2: "#22d3ee",
-      shadow: "rgba(52,211,153,0.58)",
-      foil: "rgba(16,185,129,0.18)",
+      accent: "#22c55e",
+      accent2: "#fbbf24",
+      shadow: "rgba(34,197,94,0.38)",
+      foil: "rgba(34,197,94,0.12)",
       label: "RISK-ON",
     };
   }
@@ -248,25 +248,25 @@ function cardTheme(score: number, direction: Direction) {
     return {
       accent: "#fb7185",
       accent2: "#f59e0b",
-      shadow: "rgba(251,113,133,0.55)",
-      foil: "rgba(244,63,94,0.18)",
+      shadow: "rgba(251,113,133,0.36)",
+      foil: "rgba(244,63,94,0.12)",
       label: "RISK-OFF",
     };
   }
   if (score >= 55) {
     return {
-      accent: "#22d3ee",
-      accent2: "#a78bfa",
-      shadow: "rgba(34,211,238,0.55)",
-      foil: "rgba(34,211,238,0.16)",
+      accent: "#fbbf24",
+      accent2: "#14b8a6",
+      shadow: "rgba(251,191,36,0.32)",
+      foil: "rgba(245,158,11,0.10)",
       label: "WATCH",
     };
   }
   return {
     accent: "#94a3b8",
-    accent2: "#38bdf8",
-    shadow: "rgba(148,163,184,0.38)",
-    foil: "rgba(148,163,184,0.12)",
+    accent2: "#14b8a6",
+    shadow: "rgba(148,163,184,0.26)",
+    foil: "rgba(148,163,184,0.08)",
     label: "IDLE",
   };
 }
@@ -289,14 +289,14 @@ function archetype(row: DeckRow) {
 
 function deckTransform(offset: number): CSSProperties {
   const abs = Math.abs(offset);
-  const tx = offset === 0 ? 0 : (abs === 1 ? 230 : abs === 2 ? 410 : 560) * (offset > 0 ? 1 : -1);
+  const tx = offset === 0 ? 0 : (abs === 1 ? 188 : abs === 2 ? 330 : 450) * (offset > 0 ? 1 : -1);
   const ty = abs === 0 ? -50 : abs === 1 ? -48 : -46;
-  const tz = offset === 0 ? 88 : -abs * 120;
-  const ry = offset * -18;
-  const rz = offset * 2.5;
-  const rx = abs === 0 ? -4 : -1;
-  const scale = abs === 0 ? 1.12 : abs === 1 ? 0.86 : abs === 2 ? 0.68 : 0.52;
-  const op = abs === 0 ? 1 : abs === 1 ? 0.8 : abs === 2 ? 0.42 : 0.15;
+  const tz = offset === 0 ? 42 : -abs * 92;
+  const ry = offset * -14;
+  const rz = offset * 1.8;
+  const rx = abs === 0 ? -3 : -1;
+  const scale = abs === 0 ? 1.02 : abs === 1 ? 0.78 : abs === 2 ? 0.6 : 0.48;
+  const op = abs === 0 ? 1 : abs === 1 ? 0.76 : abs === 2 ? 0.38 : 0.14;
   return {
     transform: `translate3d(calc(-50% + ${tx}px), ${ty}%, ${tz}px) rotateX(${rx}deg) rotateY(${ry}deg) rotateZ(${rz}deg) scale(${scale})`,
     opacity: op,
@@ -332,8 +332,8 @@ function DeckCard({
     transformStyle: "preserve-3d",
     borderColor: active ? theme.accent : "rgba(71,85,105,0.38)",
     boxShadow: active
-      ? `0 28px 80px -18px ${theme.shadow}, 0 0 0 1px ${theme.accent}55, inset 0 1px 0 rgba(255,255,255,0.12)`
-      : "0 12px 34px rgba(0,0,0,0.46), inset 0 1px 0 rgba(255,255,255,0.05)",
+      ? `0 20px 58px -18px ${theme.shadow}, 0 0 0 1px ${theme.accent}45, inset 0 1px 0 rgba(255,255,255,0.10)`
+      : "0 10px 28px rgba(0,0,0,0.42), inset 0 1px 0 rgba(255,255,255,0.04)",
   } as CSSProperties;
 
   return (
@@ -341,7 +341,7 @@ function DeckCard({
       type="button"
       onClick={onSelect}
       aria-pressed={active}
-      className={`fut-signal-card absolute left-1/2 top-1/2 w-[260px] border text-left transition-all duration-700 ${
+      className={`fut-signal-card absolute left-1/2 top-1/2 w-[220px] border text-left transition-all duration-700 ${
         active ? "fut-signal-card-active" : ""
       }`}
       style={style}
@@ -349,10 +349,10 @@ function DeckCard({
       <div className="fut-card-depth" aria-hidden="true" />
       <div className="fut-card-shine" aria-hidden="true" />
       <div className="fut-card-grid" aria-hidden="true" />
-      <div className="relative z-10 p-4">
+      <div className="relative z-10 p-3">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <p className="fut-rating font-display text-[42px] font-black leading-none">
+            <p className="fut-rating font-display text-[34px] font-black leading-none">
               {value}
             </p>
             <p className="mt-1 text-[9px] font-semibold uppercase tracking-[0.28em] text-slate-300/80">
@@ -369,7 +369,7 @@ function DeckCard({
           </div>
         </div>
 
-        <div className="relative my-4 flex justify-center">
+        <div className="relative my-3 flex justify-center">
           <div className="fut-orbit" aria-hidden="true" />
           <div className="fut-asset-emblem">
             <span className="relative z-10">{row.icon}</span>
@@ -377,7 +377,7 @@ function DeckCard({
         </div>
 
         <div className="text-center">
-          <p className="font-display text-[21px] font-black tracking-wide text-slate-50">
+          <p className="font-display text-[18px] font-black tracking-wide text-slate-50">
             {row.symbol}
           </p>
           <p className="mt-1 text-[11px] uppercase tracking-[0.22em] text-slate-400">
@@ -385,7 +385,7 @@ function DeckCard({
           </p>
         </div>
 
-        <div className="mt-4 grid grid-cols-2 gap-2">
+        <div className="mt-3 grid grid-cols-2 gap-2">
           <div className="fut-stat-box">
             <p className="text-[9px] uppercase tracking-widest text-slate-500">Price</p>
             <p className="font-mono text-[12px] text-slate-100">
@@ -402,8 +402,8 @@ function DeckCard({
           </div>
         </div>
 
-        <div className="mt-4 border-t border-white/10 pt-3">
-          <span className={`flex items-center justify-center rounded border px-2 py-1.5 text-[10px] font-semibold uppercase tracking-[0.18em] ${action.cls}`}>
+        <div className="mt-3 border-t border-white/10 pt-2.5">
+          <span className={`flex items-center justify-center rounded border px-2 py-1.5 text-[9px] font-semibold uppercase tracking-[0.18em] ${action.cls}`}>
             {action.label}
           </span>
         </div>
@@ -503,9 +503,9 @@ function TradePlanBlock({ ticket, symbol }: { ticket: TradeTicket | undefined; s
     : ticket.side === "short" ? "text-rose-300 border-rose-500/40"
     : "text-amber-300 border-amber-500/40";
   return (
-    <div className="rounded-md border border-cyan-500/30 bg-cyan-500/[0.04] p-2.5 space-y-2">
+    <div className="rounded-md border border-teal-300/20 bg-teal-500/[0.035] p-2.5 space-y-2">
       <div className="flex items-center justify-between">
-        <span className="text-[10px] uppercase tracking-widest text-cyan-300/85">
+        <span className="text-[10px] uppercase tracking-widest text-teal-200/85">
           Trade plan
         </span>
         <span className={`rounded border px-1.5 py-0.5 text-[10px] uppercase tracking-wider ${sideTone}`}>
@@ -601,7 +601,7 @@ export function HolographicSignalDeck({ brief }: { brief: AgentBrief }) {
 
   if (rows.length === 0) {
     return (
-      <section className="rounded-lg border border-cyan-500/20 bg-[#03101b]/88 p-6 text-center text-xs text-slate-400">
+      <section className="rounded-lg border border-white/10 bg-[#090d14]/88 p-6 text-center text-xs text-slate-400">
         Aktif aday sinyal yok.
       </section>
     );
@@ -611,7 +611,7 @@ export function HolographicSignalDeck({ brief }: { brief: AgentBrief }) {
     <section
       id="layer1_holographic_signals"
       data-panel="layer1_holographic_signals"
-      className="relative overflow-hidden rounded-lg border border-cyan-500/20 bg-[#03101b]/90 shadow-[0_0_42px_rgba(34,211,238,0.10)]"
+      className="relative overflow-hidden rounded-lg border border-white/10 bg-[#090d14]/92 shadow-[0_18px_56px_rgba(0,0,0,0.30)]"
       onMouseEnter={() => setPaused(true)}
       onMouseLeave={() => setPaused(false)}
       onFocusCapture={() => setPaused(true)}
@@ -628,11 +628,11 @@ export function HolographicSignalDeck({ brief }: { brief: AgentBrief }) {
       `}</style>
 
       {/* Header */}
-      <div className="relative flex flex-wrap items-center justify-between gap-3 border-b border-cyan-500/15 bg-black/30 px-4 py-2.5">
+      <div className="relative flex flex-wrap items-center justify-between gap-3 border-b border-white/10 bg-black/25 px-4 py-2.5">
         <div className="flex items-center gap-2.5">
-          <span className="w-1 h-3.5 rounded-full bg-cyan-400/70" aria-hidden="true" />
+          <span className="w-1 h-3.5 rounded-full bg-teal-300/70" aria-hidden="true" />
           <div>
-            <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-cyan-200/85">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-200/90">
               Holographic Command Signals
             </p>
             <p className="text-[10px] text-slate-500 mt-0.5">
@@ -650,13 +650,13 @@ export function HolographicSignalDeck({ brief }: { brief: AgentBrief }) {
       </div>
 
       {/* Body grid */}
-      <div className="grid gap-0 lg:grid-cols-[minmax(0,1fr)_390px]">
+      <div className="grid gap-0 lg:grid-cols-[minmax(0,1fr)_370px]">
         {/* Left — 3D deck */}
         <div
-          className="relative min-h-[600px] overflow-hidden border-r border-cyan-500/12"
+          className="relative min-h-[390px] overflow-hidden border-r border-white/10 lg:min-h-[400px]"
           style={{
             background:
-              "radial-gradient(circle at 50% 74%, rgba(34,211,238,0.24), transparent 34%), radial-gradient(circle at 50% 8%, rgba(167,139,250,0.12), transparent 34%), linear-gradient(180deg, rgba(4,14,28,0.78), rgba(2,5,13,0.96))",
+              "radial-gradient(circle at 50% 72%, rgba(20,184,166,0.13), transparent 34%), radial-gradient(circle at 52% 6%, rgba(251,191,36,0.07), transparent 28%), linear-gradient(180deg, rgba(12,17,27,0.92), rgba(5,8,14,0.98))",
           }}
         >
           {/* Holographic grid background */}
@@ -665,7 +665,7 @@ export function HolographicSignalDeck({ brief }: { brief: AgentBrief }) {
             className="absolute inset-0 pointer-events-none"
             style={{
               backgroundImage:
-                "linear-gradient(rgba(34,211,238,0.07) 1px, transparent 1px), linear-gradient(90deg, rgba(34,211,238,0.07) 1px, transparent 1px)",
+                "linear-gradient(rgba(148,163,184,0.055) 1px, transparent 1px), linear-gradient(90deg, rgba(148,163,184,0.055) 1px, transparent 1px)",
               backgroundSize: "44px 44px",
               maskImage: "radial-gradient(ellipse at 50% 55%, black 25%, transparent 78%)",
               WebkitMaskImage: "radial-gradient(ellipse at 50% 55%, black 25%, transparent 78%)",
@@ -689,8 +689,8 @@ export function HolographicSignalDeck({ brief }: { brief: AgentBrief }) {
             className="absolute inset-x-0 h-[2px] pointer-events-none"
             style={{
               background:
-                "linear-gradient(90deg, transparent, rgba(34,211,238,0.55), transparent)",
-              boxShadow: "0 0 18px rgba(34,211,238,0.6)",
+                "linear-gradient(90deg, transparent, rgba(45,212,191,0.26), rgba(251,191,36,0.18), transparent)",
+              boxShadow: "0 0 14px rgba(45,212,191,0.18)",
               animation: "hsd-scan 7s linear infinite",
             }}
           />
@@ -706,7 +706,7 @@ export function HolographicSignalDeck({ brief }: { brief: AgentBrief }) {
               <div
                 key={corner}
                 aria-hidden="true"
-                className="absolute h-5 w-5 border-cyan-400/60"
+                className="absolute h-5 w-5 border-teal-300/35"
                 style={{
                   ...pos,
                   borderTopWidth: corner.startsWith("t") ? 1.5 : 0,
@@ -721,8 +721,8 @@ export function HolographicSignalDeck({ brief }: { brief: AgentBrief }) {
 
           {/* 3D deck stage */}
           <div
-            className="relative mx-auto h-[390px] mt-5"
-            style={{ perspective: "2400px", perspectiveOrigin: "50% 42%" }}
+            className="relative mx-auto h-[280px] mt-4"
+            style={{ perspective: "2100px", perspectiveOrigin: "50% 40%" }}
           >
             {rows.map((r, i) => {
               const n = rows.length;
@@ -750,51 +750,51 @@ export function HolographicSignalDeck({ brief }: { brief: AgentBrief }) {
                 onClick={() => setActiveIndex(i)}
                 aria-label={r.symbol}
                 className={`h-1 rounded-full transition-all duration-500 ${
-                  i === activeIndex ? "w-8 bg-cyan-300" : "w-2 bg-slate-600/60 hover:bg-slate-500"
+                  i === activeIndex ? "w-8 bg-teal-300" : "w-2 bg-slate-600/60 hover:bg-slate-500"
                 }`}
               />
             ))}
           </div>
 
           {/* AI Trading Operations podium */}
-          <div className="relative z-10 mt-4 mb-5 mx-auto h-[120px] w-[min(620px,86%)]">
+          <div className="relative z-10 mt-1 mb-3 mx-auto h-[82px] w-[min(540px,84%)]">
             {/* expanding rings */}
             <div
               aria-hidden="true"
-              className="absolute left-1/2 top-1/2 h-20 w-40 rounded-[50%] border border-cyan-400/30"
+              className="absolute left-1/2 top-1/2 h-16 w-36 rounded-[50%] border border-teal-300/20"
               style={{ animation: "hsd-ring-1 2.6s ease-out infinite" }}
             />
             <div
               aria-hidden="true"
-              className="absolute left-1/2 top-1/2 h-20 w-40 rounded-[50%] border border-cyan-400/22"
+              className="absolute left-1/2 top-1/2 h-16 w-36 rounded-[50%] border border-amber-300/14"
               style={{ animation: "hsd-ring-2 2.6s ease-out infinite 0.6s" }}
             />
             {/* base disc */}
-            <div className="absolute inset-x-0 bottom-0 mx-auto h-20 rounded-[50%] border border-cyan-400/50 bg-cyan-400/[0.06] shadow-[0_0_42px_rgba(34,211,238,0.22)]" />
-            <div className="absolute inset-x-[16%] bottom-4 h-12 rounded-[50%] border border-cyan-400/35" />
-            <div className="absolute inset-x-[30%] bottom-8 h-6 rounded-[50%] border border-cyan-400/25" />
+            <div className="absolute inset-x-0 bottom-0 mx-auto h-14 rounded-[50%] border border-teal-300/24 bg-teal-300/[0.035] shadow-[0_0_34px_rgba(20,184,166,0.12)]" />
+            <div className="absolute inset-x-[16%] bottom-3 h-8 rounded-[50%] border border-slate-400/18" />
+            <div className="absolute inset-x-[30%] bottom-6 h-4 rounded-[50%] border border-amber-300/14" />
             {/* orb */}
             <div
               aria-hidden="true"
-              className="absolute bottom-10 left-1/2 h-3.5 w-3.5 -translate-x-1/2 rounded-full bg-cyan-300"
+              className="absolute bottom-7 left-1/2 h-3 w-3 -translate-x-1/2 rounded-full bg-amber-200"
               style={{
-                boxShadow: "0 0 14px rgba(34,211,238,0.9), 0 0 28px rgba(34,211,238,0.4)",
+                boxShadow: "0 0 12px rgba(251,191,36,0.68), 0 0 24px rgba(20,184,166,0.22)",
                 animation: "hsd-orb 2.4s ease-in-out infinite",
               }}
             />
             {/* label */}
-            <div className="absolute bottom-0 left-1/2 -translate-x-1/2 rounded border border-cyan-400/35 bg-slate-950/70 px-4 py-1 text-[10px] uppercase tracking-[0.32em] text-cyan-100">
+            <div className="absolute bottom-0 left-1/2 -translate-x-1/2 rounded border border-white/15 bg-slate-950/72 px-4 py-1 text-[10px] uppercase tracking-[0.32em] text-slate-200">
               ◆ AI Trading Operations ◆
             </div>
           </div>
         </div>
 
         {/* Right — Sinyal Detayı */}
-        <aside className="relative min-h-[600px] bg-black/25 p-3">
-          <div className="space-y-3.5">
+        <aside className="relative h-[390px] min-h-[390px] overflow-y-auto bg-black/20 p-3 lg:h-[400px] lg:min-h-[400px]">
+          <div className="space-y-2.5">
             <div className="flex items-center gap-2">
-              <span className="h-1.5 w-1.5 rounded-full bg-cyan-300 shadow-[0_0_8px_rgba(34,211,238,0.8)]" />
-              <p className="text-[10px] uppercase tracking-[0.22em] text-cyan-200/85">
+              <span className="h-1.5 w-1.5 rounded-full bg-teal-300 shadow-[0_0_8px_rgba(45,212,191,0.45)]" />
+              <p className="text-[10px] uppercase tracking-[0.22em] text-slate-300/90">
                 Sinyal detayı
               </p>
             </div>
@@ -847,7 +847,7 @@ export function HolographicSignalDeck({ brief }: { brief: AgentBrief }) {
                       onClick={() => setSelectedTf(tf)}
                       className={`rounded px-1.5 py-0.5 text-[9px] font-mono uppercase border transition-colors ${
                         effectiveTf === tf
-                          ? "border-cyan-400/55 bg-cyan-400/15 text-cyan-100"
+                          ? "border-teal-300/45 bg-teal-400/10 text-teal-100"
                           : "border-slate-600/40 bg-slate-800/40 text-slate-400 hover:text-slate-200"
                       }`}
                     >
@@ -866,7 +866,7 @@ export function HolographicSignalDeck({ brief }: { brief: AgentBrief }) {
             <div className="grid grid-cols-2 gap-2 text-[11px]">
               <div className="rounded border border-slate-700/40 bg-black/30 p-2">
                 <p className="uppercase tracking-widest text-slate-500 text-[9px]">DQS</p>
-                <p className="font-mono text-cyan-300">{Math.round(brief.dqs?.score ?? 0)}</p>
+                <p className="font-mono text-teal-300">{Math.round(brief.dqs?.score ?? 0)}</p>
               </div>
               <div className="rounded border border-slate-700/40 bg-black/30 p-2">
                 <p className="uppercase tracking-widest text-slate-500 text-[9px]">Mode</p>
@@ -894,7 +894,7 @@ export function HolographicSignalDeck({ brief }: { brief: AgentBrief }) {
 
       {/* Bottom — Piyasa göstergeleri ticker */}
       {supports.length > 0 && (
-        <div className="border-t border-cyan-500/15 bg-black/30 px-4 py-2.5">
+        <div className="border-t border-white/10 bg-black/25 px-4 py-2.5">
           <p className="text-[9px] font-medium uppercase tracking-[0.22em] text-slate-500 mb-1.5">
             Piyasa Göstergeleri
           </p>
@@ -936,7 +936,7 @@ export function HolographicSignalDeck({ brief }: { brief: AgentBrief }) {
       )}
 
       {/* Footer */}
-      <div className="border-t border-cyan-500/15 bg-black/30 px-4 py-1.5 text-center">
+      <div className="border-t border-white/10 bg-black/25 px-4 py-1.5 text-center">
         <p className="text-[9px] text-slate-500">
           Yalnız görselleştirme · karar üretmez · final karar deterministik engine + RiskGate
         </p>

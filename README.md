@@ -31,3 +31,14 @@ http://localhost:3000/cockpit
 pnpm codegen
 pnpm typecheck
 ```
+
+## GitHub Backup Discipline
+
+Use GitHub as the clean backup for reviewed frontend work. Local changes should be pushed after at least two clean checks or manual review steps, for example:
+
+```bash
+pnpm typecheck
+pnpm build
+```
+
+Backend changes stay in the original Clean E-yAy repository unless a contract update is intentionally copied into `contracts/openapi.yaml`.

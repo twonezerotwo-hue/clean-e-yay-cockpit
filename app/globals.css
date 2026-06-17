@@ -15,3 +15,127 @@ html, body {
 .panel {
   @apply rounded-2xl border border-ink-700/60 bg-ink-800/70 backdrop-blur p-4;
 }
+
+.space-brain-canvas canvas {
+  width: 100% !important;
+  height: 100% !important;
+}
+
+@keyframes holo-float {
+  0%, 100% {
+    transform: translate3d(var(--tx), var(--ty), 0) rotateY(var(--rot)) scale(var(--scale));
+  }
+  50% {
+    transform: translate3d(var(--tx), calc(var(--ty) - 6px), 0) rotateY(var(--rot)) scale(var(--scale));
+  }
+}
+
+@keyframes holo-scan {
+  0% {
+    transform: translateX(-110%);
+  }
+  100% {
+    transform: translateX(110%);
+  }
+}
+
+@keyframes holo-platform {
+  from {
+    transform: translateX(-50%) rotate(0deg);
+  }
+  to {
+    transform: translateX(-50%) rotate(360deg);
+  }
+}
+
+.holo-signal-card {
+  position: absolute;
+  left: calc(50% - 92px);
+  top: 0;
+  z-index: var(--z);
+  width: 184px;
+  min-height: 124px;
+  border: 1px solid rgba(34, 211, 238, 0.22);
+  border-radius: 12px;
+  background:
+    linear-gradient(180deg, rgba(13, 42, 75, 0.78), rgba(2, 9, 22, 0.92)),
+    radial-gradient(circle at 80% 18%, rgba(163, 230, 53, 0.3), transparent 20%);
+  box-shadow: 0 12px 38px rgba(0, 0, 0, 0.42), 0 0 24px rgba(34, 211, 238, 0.12);
+  opacity: var(--opacity);
+  padding: 12px;
+  text-align: left;
+  transform-style: preserve-3d;
+  animation: holo-float 4.8s ease-in-out infinite;
+  transition: border-color 180ms ease, box-shadow 180ms ease, opacity 180ms ease;
+}
+
+.holo-signal-card:hover,
+.holo-signal-card-active {
+  border-color: rgba(16, 185, 129, 0.65);
+  box-shadow: 0 16px 44px rgba(0, 0, 0, 0.48), 0 0 34px rgba(16, 185, 129, 0.34);
+  opacity: 1;
+}
+
+.holo-scan {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.holo-scan::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 90px;
+  background: linear-gradient(90deg, transparent, rgba(34, 211, 238, 0.14), transparent);
+  animation: holo-scan 5.2s linear infinite;
+}
+
+.holo-corner {
+  position: absolute;
+  width: 42px;
+  height: 42px;
+  border-color: rgba(34, 211, 238, 0.55);
+  pointer-events: none;
+}
+
+.holo-corner-tl {
+  top: 10px;
+  left: 10px;
+  border-top: 1px solid;
+  border-left: 1px solid;
+}
+
+.holo-corner-tr {
+  top: 10px;
+  right: 10px;
+  border-top: 1px solid;
+  border-right: 1px solid;
+}
+
+.holo-corner-bl {
+  bottom: 10px;
+  left: 10px;
+  border-bottom: 1px solid;
+  border-left: 1px solid;
+}
+
+.holo-corner-br {
+  right: 10px;
+  bottom: 10px;
+  border-right: 1px solid;
+  border-bottom: 1px solid;
+}
+
+.holo-platform {
+  position: absolute;
+  bottom: 7px;
+  left: 50%;
+  width: 210px;
+  height: 210px;
+  border-radius: 999px;
+  border: 1px dashed rgba(34, 211, 238, 0.3);
+  animation: holo-platform 16s linear infinite;
+}

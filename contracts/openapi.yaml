@@ -1,0 +1,3056 @@
+openapi: 3.1.0
+info:
+  title: Clean E-yAy API
+  version: 2.0.0
+  description: |
+    Sözleşme-önce API. Pydantic ve TypeScript tipleri buradan üretilir.
+    `make codegen` ile yenilenir. Manuel düzenleme yok.
+servers:
+  - url: http://127.0.0.1:9000
+    description: Local dev
+paths:
+  /api/v1/health:
+    get:
+      operationId: getHealth
+      summary: Liveness probe
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
+
+  /api/v1/system/health:
+    get:
+      operationId: getSystemHealth
+      summary: O1 — 7/24 worker reliability özeti (worker/provider/dqs/snapshot/halt)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SystemHealth"
+
+  /api/v1/regime-report/current:
+    get:
+      operationId: getRegimeReportCurrent
+      summary: En güncel rejim raporu
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RegimeReport"
+
+  /api/v1/dashboard/state:
+    get:
+      operationId: getDashboardState
+      summary: Canonical dashboard state — risk gate + agent votes + module health
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardState"
+
+  /api/v1/ai-report/current:
+    get:
+      operationId: getAIReportCurrent
+      summary: En güncel AI analist raporu (LLM özetli)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AIReport"
+
+  /api/v1/chat:
+    post:
+      operationId: postChat
+      summary: v2.6 — state-grounded soru-cevap (LLM karar vermez, sadece açıklar)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChatRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChatResponse"
+
+  /api/v1/paper-trading/state:
+    get:
+      operationId: getPaperTradingState
+      summary: Açık pozisyonlar + son tick PnL (read-only)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaperTradingState"
+
+  /api/v1/paper-trading/tick:
+    post:
+      operationId: postPaperTradingTick
+      summary: Manuel tick (yan etkili — açma/kapatma yapabilir)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TickResult"
+
+  /api/v1/paper-trading/tickets:
+    get:
+      operationId: getTradeTickets
+      summary: Aktif Trade Ticket'lar (broker'a manuel girmeden tek-bakış kart)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TradeTicketList"
+
+  /api/v1/notifications:
+    get:
+      operationId: getNotifications
+      summary: Bildirim listesi (en yeni önce; observer — karar vermez)
+      parameters:
+        - in: query
+          name: limit
+          schema: { type: integer, default: 50 }
+        - in: query
+          name: unread_only
+          schema: { type: boolean, default: false }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationList"
+
+  /api/v1/notifications/{id}/ack:
+    post:
+      operationId: ackNotification
+      summary: Bildirimi okundu işaretle
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string }
+                  id: { type: string }
+
+  /api/v1/notifications/ack-all:
+    post:
+      operationId: ackAllNotifications
+      summary: Tüm okunmamış bildirimleri okundu işaretle
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string }
+                  marked: { type: integer }
+
+  /api/v1/paper-trading/manual-ready:
+    get:
+      operationId: getPaperTradingManualReady
+      summary: P2 — owner-approval kuyruğu (DEFENSIVE/CRISIS adayları; read-only)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ManualReadyQueue"
+
+  /api/v1/paper-trading/manual-ready/{manual_id}/approve:
+    post:
+      operationId: postPaperTradingManualReadyApprove
+      summary: P2 — owner onayı; paper pozisyon açar (price/state/duplicate guard'ları geçerli)
+      parameters:
+        - name: manual_id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: OK (status=opened|no_price|blocked)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ManualReadyActionResult"
+        "404":
+          description: manual_id kuyrukta yok (not_found)
+
+  /api/v1/paper-trading/manual-ready/{manual_id}/reject:
+    post:
+      operationId: postPaperTradingManualReadyReject
+      summary: P2 — owner reddi; kuyruktan çıkarır + rejection kaydeder (re-queue silent block)
+      parameters:
+        - name: manual_id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ManualReadyActionResult"
+        "404":
+          description: manual_id kuyrukta yok (not_found)
+
+  /api/v1/paper-trading/manual-ready/{manual_id}/dismiss:
+    post:
+      operationId: postPaperTradingManualReadyDismiss
+      summary: P2 — kuyruktan çıkar (rejection kaydetmez; sonraki tick'te yeniden düşebilir)
+      parameters:
+        - name: manual_id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ManualReadyActionResult"
+        "404":
+          description: manual_id kuyrukta yok (not_found)
+
+  /api/v1/learning/summary:
+    get:
+      operationId: getLearningSummary
+      summary: Walk-forward + kalibrasyon özeti
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LearningSummary"
+
+  /api/v1/risk/correlation:
+    get:
+      operationId: getRiskCorrelation
+      summary: G4 — korelasyon matrisi + aynı yönlü cluster exposure (read-only)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CorrelationState"
+
+  /api/v1/risk/halts:
+    get:
+      operationId: getRiskHalts
+      summary: G5 — aktif halt + timeline + daily-loss/max-DD gauge metrikleri
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HaltsState"
+
+  /api/v1/risk/halts/reset:
+    post:
+      operationId: postRiskHaltsReset
+      summary: G5 — owner reset (tek manuel çıkış; otomatik reset yok)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HaltResetResult"
+
+  /api/v1/decision/matrix:
+    get:
+      operationId: getDecisionMatrix
+      summary: T2 — (symbol × timeframe) karar matrisi; hücre rozetleri backend'de
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DecisionMatrix"
+
+  /api/v1/cockpit/brief:
+    get:
+      operationId: getCockpitBrief
+      summary: UX1 — Agent Operating Cockpit özeti (AgentBrief + DecisionTrace; read-only)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CockpitBrief"
+
+  /api/v1/data/snapshot:
+    get:
+      operationId: getDataSnapshot
+      summary: Anlık piyasa snapshot'ı + provider durumu + DQS (read-only, mock fallback yok)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DataSnapshot"
+
+  /api/v1/learning/calibration:
+    get:
+      operationId: getLearningCalibration
+      summary: G6 — Platt kalibrasyon parametreleri + reliability bins (read-only)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CalibrationState"
+
+  /api/v1/learning/tf-weights:
+    get:
+      operationId: getLearningTfWeights
+      summary: Step 8 — per-TF calibration + trust-gated tf_weights proposal (read-only)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TfWeightsReport"
+
+  /api/v1/learning/calibration/retrain:
+    post:
+      operationId: postLearningCalibrationRetrain
+      summary: G6 — kalibrasyonu yeniden fit et (verified+predicted trade'lerden)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                description: calibration_trainer.train() sonucu (additive).
+
+  /api/v1/learning/mistakes:
+    get:
+      operationId: getLearningMistakes
+      summary: G3 — mistake memory kayıtları + per-fingerprint verdict (read-only)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MistakesState"
+
+  /api/v1/learning/rebalance/proposal:
+    get:
+      operationId: getLearningRebalanceProposal
+      summary: G2 — bekleyen rebalance önerisi + geçmiş (read-only)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RebalanceState"
+
+  /api/v1/paper-trading/reset:
+    post:
+      operationId: postPaperTradingReset
+      summary: Paper state'i sıfırla (yalnızca paper; broker yok)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                description: Reset sonucu (additive).
+
+  /api/v1/paper-trading/maintenance/archive:
+    post:
+      operationId: postPaperTradingMaintenanceArchive
+      summary: Owner-admin — paper state'i arşivle (read-only kopya; mutasyon yok; paper-safe)
+      parameters:
+        - name: reason
+          in: query
+          required: false
+          schema: { type: string }
+      responses:
+        "200":
+          description: OK (MaintenanceResult; paper_safe/no_execution; additive)
+          content:
+            application/json:
+              schema:
+                type: object
+                description: Maintenance sonucu (archive; additive).
+
+  /api/v1/paper-trading/maintenance/repair:
+    post:
+      operationId: postPaperTradingMaintenanceRepair
+      summary: Owner-admin — paper state tutarsızlıklarını onar (dry_run varsayılan true)
+      parameters:
+        - name: dry_run
+          in: query
+          required: false
+          schema: { type: boolean, default: true }
+      responses:
+        "200":
+          description: OK (MaintenanceResult; dry_run ise yazım yok; non-dry-run önce arşivler)
+          content:
+            application/json:
+              schema:
+                type: object
+                description: Maintenance sonucu (repair; additive).
+
+  /api/v1/paper-trading/maintenance/reset:
+    post:
+      operationId: postPaperTradingMaintenanceReset
+      summary: Owner-admin — paper hesabı sıfırla (önce arşivler; learning/decision log korunur)
+      parameters:
+        - name: reason
+          in: query
+          required: false
+          schema: { type: string }
+        - name: preserve_learning
+          in: query
+          required: false
+          schema: { type: boolean, default: true }
+      responses:
+        "200":
+          description: OK (MaintenanceResult; arşiv + temiz initial state; broker yok)
+          content:
+            application/json:
+              schema:
+                type: object
+                description: Maintenance sonucu (reset; additive).
+
+  /api/v1/replay/status:
+    get:
+      operationId: getReplayStatus
+      summary: R1 — replay store durumu (active/empty); kayıtlı snapshot sayısı + en son id
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReplayStatus"
+
+  /api/v1/replay/backtest:
+    get:
+      operationId: getReplayBacktest
+      summary: R2 — deterministik rolling backtest (stored snapshot serisi; live refetch yok)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReplayBacktest"
+
+  /api/v1/replay/backtest/{run_id}:
+    get:
+      operationId: getReplayBacktestRun
+      summary: R2 — belirli run_id için backtest; store değiştiyse 404 (sahte run saklanmaz)
+      parameters:
+        - name: run_id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReplayBacktest"
+        "404":
+          description: run_id mevcut store ile eşleşmiyor (not_found)
+
+  /api/v1/replay/{snapshot_id}:
+    get:
+      operationId: getReplaySnapshot
+      summary: R1 — kayıtlı snapshot'ı döndürür (stored state inspection; live refetch yok)
+      parameters:
+        - name: snapshot_id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReplaySnapshot"
+        "404":
+          description: snapshot store'da yok (not_found)
+
+  /api/v1/replay/{snapshot_id}/decision-trace:
+    get:
+      operationId: getReplayDecisionTrace
+      summary: R1 — kayıtlı decision_matrix'ten karar izi (yeni karar hesaplamaz)
+      parameters:
+        - name: snapshot_id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReplayDecisionTrace"
+        "404":
+          description: snapshot store'da yok (not_found)
+
+  /api/v1/market-sessions/current:
+    get:
+      operationId: getMarketSessionsCurrent
+      summary: Global market-session statuses (open/opening/closing) — read-only, paper-safe
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MarketSessionsCurrentResponse"
+
+  /api/v1/market-sessions/asset/{asset_code}:
+    get:
+      operationId: getMarketSessionAsset
+      summary: Per-asset session context + restrictive gate decision — read-only, paper-safe
+      parameters:
+        - name: asset_code
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MarketSessionAssetResponse"
+
+  /api/v1/technical/insight/{asset_code}:
+    get:
+      operationId: getTechnicalInsight
+      summary: Per-symbol multi-timeframe Fibonacci technical evidence — read-only
+      parameters:
+        - name: asset_code
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TechnicalInsight"
+
+  /api/v1/technical/agent-matrix:
+    get:
+      operationId: getAgentMatrix
+      summary: New multi-timeframe agent pipeline (steps 1–6) per-symbol matrix — read-only
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentMatrix"
+
+  /api/v1/decision/shadow:
+    get:
+      operationId: getShadowComparison
+      summary: Step 9 controlled activation — latest live-vs-shadow comparison (observe-only, read-only)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ShadowComparison"
+
+components:
+  schemas:
+    Health:
+      type: object
+      required: [status, version, uptime_sec]
+      properties:
+        status: { type: string, enum: [ok, degraded, down] }
+        version: { type: string }
+        uptime_sec: { type: number }
+
+    WorkerHealth:
+      type: object
+      description: O1 — tek worker (tick/learning) sağlık görünümü.
+      required: [worker_name, status, stale]
+      properties:
+        worker_name: { type: string }
+        # RUNNING/OK/DEGRADED/FAILED/NO_DATA (stored) + STALE/UNKNOWN (türetilen).
+        # Enum bağlamıyorum: STALE/UNKNOWN runtime'da türetiliyor.
+        status: { type: string }
+        stale: { type: boolean }
+        run_id: { type: string, nullable: true }
+        started_at: { type: string, nullable: true }
+        completed_at: { type: string, nullable: true }
+        last_success_at: { type: string, nullable: true }
+        last_error: { type: string, nullable: true }
+        age_seconds: { type: number, nullable: true }
+        cycle_count: { type: integer }
+        snapshots_written: { type: integer }
+        decisions_generated: { type: integer }
+        paper_actions: { type: integer }
+        learning_outcomes_seen: { type: integer }
+        proposals_generated: { type: integer }
+        duration_ms: { type: integer, nullable: true }
+
+    SystemHealth:
+      type: object
+      description: O1 — 7/24 sistem sağlığı özeti (network-free; owner warning'leri).
+      required: [api_status, paper_safe, no_execution, workers]
+      properties:
+        api_status: { type: string }
+        paper_safe: { type: boolean }
+        no_execution: { type: boolean }
+        workers:
+          type: object
+          properties:
+            tick_worker: { $ref: "#/components/schemas/WorkerHealth" }
+            learning_worker: { $ref: "#/components/schemas/WorkerHealth" }
+        stale_workers:
+          type: array
+          items: { type: string }
+        last_successful_tick: { type: string, nullable: true }
+        last_learning_run: { type: string, nullable: true }
+        provider_summary: { type: object }
+        dqs_status: { type: string, nullable: true }
+        snapshot_store_status: { type: object }
+        risk_halt_status: { type: object }
+        warnings:
+          type: array
+          items: { type: string }
+
+    SnapshotMeta:
+      type: object
+      required: [snapshot_id, generated_at]
+      properties:
+        snapshot_id: { type: string }
+        generated_at: { type: string, format: date-time }
+        dqs_score: { type: number, minimum: 0, maximum: 100 }
+        fallback_used: { type: boolean }
+
+    RegimeLayer:
+      type: object
+      required: [name, score, direction]
+      properties:
+        name: { type: string }
+        score: { type: number }
+        direction: { type: string, enum: [bullish, bearish, neutral] }
+        evidence:
+          type: array
+          items: { type: string }
+
+    AssetSignal:
+      type: object
+      required: [symbol, score, direction, status]
+      properties:
+        symbol: { type: string }
+        score: { type: number, minimum: 0, maximum: 100 }
+        direction: { type: string, enum: [bullish, bearish, neutral] }
+        status: { type: string, enum: [BLOCKING, PENDING, CONFIRMED] }
+        confluence_aligned: { type: boolean }
+        dominant_module: { type: string }
+        win_rate_signal: { type: string, enum: [AVOID, NORMAL, BOOST, INSUFFICIENT_DATA] }
+
+    RegimeReport:
+      type: object
+      required: [meta, regime_label, layers, assets]
+      properties:
+        meta: { $ref: "#/components/schemas/SnapshotMeta" }
+        regime_label: { type: string, enum: [OFFENSIVE, NEUTRAL, DEFENSIVE, CRISIS] }
+        layers:
+          type: array
+          items: { $ref: "#/components/schemas/RegimeLayer" }
+        assets:
+          type: array
+          items: { $ref: "#/components/schemas/AssetSignal" }
+        headlines:
+          type: array
+          items: { $ref: "#/components/schemas/NewsHeadline" }
+        catalysts:
+          type: array
+          items: { $ref: "#/components/schemas/Catalyst" }
+        event_risk: { $ref: "#/components/schemas/EventRiskView" }
+
+    NewsHeadline:
+      type: object
+      required: [id, source, ts, title]
+      properties:
+        id: { type: string }
+        source: { type: string }
+        region: { type: string }
+        ts: { type: string, format: date-time }
+        title: { type: string }
+        title_tr: { type: string }
+        sentiment: { type: string, enum: [bullish, bearish, neutral] }
+        asset_impact:
+          type: object
+          additionalProperties: { type: number }
+        # P0 — haber yalnızca bağlam; sembol etkisi varsa actionable, yoksa context-only.
+        actionable: { type: boolean }
+        freshness: { type: string, enum: [FRESH, RECENT, STALE] }
+
+    Catalyst:
+      type: object
+      required: [id, ts, title]
+      properties:
+        id: { type: string }
+        ts: { type: string, format: date-time }
+        title: { type: string }
+        importance: { type: string, enum: [low, medium, high, critical] }
+        region: { type: string }
+        hours_until: { type: number }
+        days_until: { type: integer }
+        # P0 — bu olayın tetiklediği event riski seviyesi (yalnızca kısıtlayıcı).
+        event_level: { type: string, enum: [NONE, WATCH, NO_POSITION_INCREASE] }
+
+    EventRiskView:
+      type: object
+      description: >
+        P0 — Olay riski özeti. YALNIZCA kısıtlayıcı: yaklaşan doğrulanmış yüksek
+        etkili takvim olayı yeni pozisyon açılışını kısar. RiskGate/DQS/KillSwitch/
+        halt gate'lerini bypass etmez, size artırmaz.
+      required: [level, restrictive]
+      properties:
+        level: { type: string, enum: [NONE, WATCH, NO_POSITION_INCREASE] }
+        action: { type: string, enum: [WATCH, NO_POSITION_INCREASE], nullable: true }
+        reason: { type: string }
+        evidence:
+          type: array
+          items: { type: string }
+        restrictive: { type: boolean }
+        triggers:
+          type: array
+          items: { $ref: "#/components/schemas/EventRiskTrigger" }
+
+    EventRiskTrigger:
+      type: object
+      required: [id, title, importance, level]
+      properties:
+        id: { type: string }
+        title: { type: string }
+        importance: { type: string }
+        hours_until: { type: number }
+        days_until: { type: integer, nullable: true }
+        level: { type: string, enum: [WATCH, NO_POSITION_INCREASE] }
+
+    RiskGate:
+      type: object
+      required: [action, reason]
+      properties:
+        action: { type: string, enum: [HOLD, WATCH, HEDGE_INCREASE, NO_POSITION_INCREASE, RISK_REDUCE, KILL_SWITCH] }
+        reason: { type: string }
+        evidence:
+          type: array
+          items: { type: string }
+
+    AgentVote:
+      type: object
+      required: [persona, direction, confidence]
+      properties:
+        persona: { type: string, enum: [analyst, risk_officer, macro_strategist] }
+        direction: { type: string, enum: [bullish, bearish, neutral] }
+        confidence: { type: number, minimum: 0, maximum: 1 }
+        narrative: { type: string }
+
+    ModuleHealth:
+      type: object
+      additionalProperties:
+        type: object
+        properties:
+          status: { type: string, enum: [ok, degraded, down] }
+          last_success_at: { type: string, format: date-time }
+          notes: { type: string }
+
+    DashboardState:
+      type: object
+      required: [meta, risk_gate, agent_votes, module_health]
+      properties:
+        meta: { $ref: "#/components/schemas/SnapshotMeta" }
+        risk_gate: { $ref: "#/components/schemas/RiskGate" }
+        agent_votes:
+          type: array
+          items: { $ref: "#/components/schemas/AgentVote" }
+        quorum_reached: { type: boolean }
+        module_health: { $ref: "#/components/schemas/ModuleHealth" }
+        warnings:
+          type: array
+          items: { type: string }
+
+    AIReport:
+      type: object
+      required: [meta, verdict, narrative]
+      properties:
+        meta: { $ref: "#/components/schemas/SnapshotMeta" }
+        verdict: { type: string, enum: [bullish, bearish, neutral, no_trade] }
+        narrative: { type: string }
+        key_signals:
+          type: array
+          items: { type: string }
+        token_usage:
+          type: object
+          properties:
+            input: { type: integer }
+            output: { type: integer }
+            cached: { type: boolean }
+        # v2.6 additive — persona katmanı (narrative-only; decision path'e yazmaz)
+        no_actionable_decision: { type: boolean }
+        timeframe_summary: { $ref: "#/components/schemas/TimeframeSummary" }
+        personas:
+          type: array
+          items: { $ref: "#/components/schemas/PersonaSection" }
+        llm: { $ref: "#/components/schemas/LLMMeta" }
+
+    PersonaSection:
+      type: object
+      description: >
+        v2.6 — persona bölümü. evidence_used HER ZAMAN backend'de
+        deterministik doldurulur (LLM kanıt uyduramaz). source=fallback →
+        LLM'siz deterministik narrative.
+      required: [persona, title, summary]
+      properties:
+        persona: { type: string, enum: [analyst, risk_officer, macro_strategist] }
+        title: { type: string }
+        summary: { type: string }
+        concerns:
+          type: array
+          items: { type: string }
+        evidence_used:
+          type: array
+          items: { type: string }
+        missing_data:
+          type: array
+          items: { type: string }
+        actionability: { type: string }
+        what_would_change_my_mind: { type: string }
+        source: { type: string, enum: [llm, fallback] }
+        model: { type: string, nullable: true }
+
+    TimeframeSummary:
+      type: object
+      description: v2.6 — DecisionMatrix'in rapor özeti (TF farkları, candidate vs final, blocked_by, paper_action).
+      properties:
+        suspended: { type: boolean }
+        lines:
+          type: array
+          items: { type: string }
+        candidate_vs_final_diffs:
+          type: array
+          items:
+            type: object
+            properties:
+              symbol: { type: string }
+              timeframe: { $ref: "#/components/schemas/Timeframe" }
+              candidate: { type: string }
+              final: { type: string }
+              blocked_by:
+                type: array
+                items: { type: string }
+              reason: { type: string }
+        blocked_by_reasons:
+          type: array
+          items: { type: string }
+        paper_actions:
+          type: array
+          items:
+            type: object
+            properties:
+              symbol: { type: string }
+              timeframe: { $ref: "#/components/schemas/Timeframe" }
+              paper_action: { type: string }
+
+    LLMMeta:
+      type: object
+      description: v2.6 — LLM çağrı meta'sı; source=fallback → deterministik narrative.
+      properties:
+        mode: { type: string, enum: ["off", mock, groq] }
+        model: { type: string, nullable: true }
+        source: { type: string, enum: [llm, fallback, guard] }
+        fallback_reason: { type: string, nullable: true }
+        cached: { type: boolean }
+        tokens_used: { type: integer }
+
+    ChatRequest:
+      type: object
+      required: [message]
+      properties:
+        message: { type: string, minLength: 1, maxLength: 2000 }
+
+    ChatResponse:
+      type: object
+      description: >
+        v2.6 — state-grounded yanıt. refused=true → injection/bypass guard
+        devrede. evidence_used yanıtın dayandığı state kanıtları.
+      required: [answer, refused]
+      properties:
+        answer: { type: string }
+        refused: { type: boolean }
+        evidence_used:
+          type: array
+          items: { type: string }
+        snapshot_id: { type: string }
+        llm: { $ref: "#/components/schemas/LLMMeta" }
+        mode:
+          type: object
+          description: Provenance mode bloğu (LIVE/MOCK_MODE/SIMULATION/INSUFFICIENT_DATA).
+          additionalProperties: true
+
+    Position:
+      type: object
+      required: [id, symbol, side, entry_price, size_usd, opened_at]
+      properties:
+        id: { type: string }
+        symbol: { type: string }
+        side: { type: string, enum: [long, short] }
+        entry_price: { type: number }
+        current_price: { type: number }
+        size_usd: { type: number }
+        unrealized_pnl_usd: { type: number }
+        sl: { type: number }
+        tp: { type: number }
+        opened_at: { type: string, format: date-time }
+        timeframe: { $ref: "#/components/schemas/Timeframe" }
+        valid_until:
+          type: string
+          format: date-time
+          nullable: true
+          description: T2 — TF time-stop; dolunca TIME_STOP_EXIT. null → time-stop yok.
+        time_stop_status:
+          type: string
+          enum: [NONE, ACTIVE, EXPIRED]
+          description: >
+            UX1 — time-stop durumu backend'de; negatif geri sayım YOK. EXPIRED →
+            exit pending (fiyatla TIME_STOP_EXIT'te kapanır).
+        time_stop_seconds_remaining:
+          type: integer
+          nullable: true
+          description: UX1 — kalan saniye (≥0; EXPIRED'da 0, time-stop yoksa null).
+        lifecycle_status:
+          $ref: "#/components/schemas/PaperLifecycleStatus"
+        time_stop_expired:
+          type: boolean
+          description: P1 — valid_until geçti mi (fiyat gelince TIME_STOP_EXIT).
+        pending_exit_reason:
+          type: string
+          nullable: true
+          description: P1 — exit neden bekliyor (fiyat yoksa); ör. TIME_STOP_EXIT / KILL_SWITCH_EXIT.
+        open_reason:
+          type: string
+          nullable: true
+          description: P1 — learning handoff; açılış karar gerekçesi.
+        snapshot_id:
+          type: string
+          nullable: true
+          description: P1 — learning handoff; açılışın kaynak snapshot'ı.
+        scale_in:
+          type: boolean
+          description: P1 — explicit scale-in pozisyonu (default false).
+
+    PaperLifecycleStatus:
+      type: string
+      description: >
+        P1 — paper pozisyon yaşam döngüsü durumu. Canlı: OPEN /
+        EXPIRED_PENDING_PRICE / EXIT_PENDING / ERROR_STATE. Terminal (Trade):
+        CLOSED / FORCE_CLOSED.
+      enum: [OPEN, EXIT_PENDING, EXPIRED_PENDING_PRICE, CLOSED, FORCE_CLOSED, ERROR_STATE]
+
+    PaperAuditEvent:
+      type: object
+      description: >
+        P1 — paper lifecycle audit olayı (append-only JSONL'den). action bilinen
+        değerlerden biri (OPEN_ATTEMPT / OPENED / OPEN_BLOCKED / SIZE_REDUCED /
+        TIME_STOP_EXPIRED / EXIT_PENDING / CLOSED / KILL_SWITCH_EXIT /
+        RISK_REDUCE_EXIT / STATE_REPAIRED / ERROR). Alanlar additive.
+      required: [event_id, timestamp, action]
+      additionalProperties: true
+      properties:
+        event_id: { type: string }
+        timestamp: { type: string, format: date-time }
+        action: { type: string }
+        position_id: { type: string }
+        symbol: { type: string }
+        timeframe: { type: string }
+        reason: { type: string }
+        price_used: { type: number }
+        size: { type: number }
+        pnl: { type: number }
+        snapshot_id: { type: string }
+
+    Trade:
+      type: object
+      required: [id, symbol, side, entry_price, exit_price, pnl_usd, opened_at, closed_at, close_reason]
+      properties:
+        id: { type: string }
+        symbol: { type: string }
+        side: { type: string, enum: [long, short] }
+        entry_price: { type: number }
+        exit_price: { type: number }
+        pnl_usd: { type: number }
+        opened_at: { type: string, format: date-time }
+        closed_at: { type: string, format: date-time }
+        close_reason:
+          type: string
+          enum: [SL_HIT, TP_HIT, SIGNAL_REVERSAL, RISK_REDUCE, MANUAL, TIME_STOP_EXIT, KILL_SWITCH_EXIT]
+        fingerprint: { type: string }
+        timeframe: { $ref: "#/components/schemas/Timeframe" }
+        lifecycle_status:
+          $ref: "#/components/schemas/PaperLifecycleStatus"
+        open_reason:
+          type: string
+          nullable: true
+          description: P1 — learning handoff; açılış gerekçesi.
+        snapshot_id:
+          type: string
+          nullable: true
+          description: P1 — learning handoff; kaynak snapshot.
+
+    PaperTradingState:
+      type: object
+      required: [equity_usd, realized_pnl_usd, open_positions, recent_trades]
+      properties:
+        equity_usd: { type: number }
+        realized_pnl_usd: { type: number }
+        unrealized_pnl_usd: { type: number }
+        max_drawdown_pct: { type: number }
+        sharpe_30d: { type: number }
+        open_positions:
+          type: array
+          items: { $ref: "#/components/schemas/Position" }
+        recent_trades:
+          type: array
+          items: { $ref: "#/components/schemas/Trade" }
+        new_entries_disabled:
+          type: boolean
+          description: P1 — aktif halt (KILL_SWITCH/RISK_REDUCE) varsa yeni giriş kapalı.
+        duplicate_warning:
+          type: array
+          description: P1 — aynı (symbol, timeframe) birden fazla açık (normalde boş).
+          items:
+            type: object
+            additionalProperties: true
+        audit_summary:
+          type: object
+          additionalProperties: true
+          description: P1 — son audit penceresi özeti (action sayıları).
+        recent_audit_events:
+          type: array
+          items: { $ref: "#/components/schemas/PaperAuditEvent" }
+        manual_ready_count:
+          type: integer
+          description: P2 — owner onayı bekleyen aday sayısı (DEFENSIVE/CRISIS).
+        position_rechecks:
+          type: array
+          description: |
+            UX-A14 — tick yan ürünü, her açık pozisyon için fresh karara karşı
+            verdict (OK/WATCH/REDUCE/EXIT_RECOMMEND). Read-only öneri; otomatik
+            kapatma YOK. Çıkış yine SL/TP veya manuel close üzerinden.
+          items: { $ref: "#/components/schemas/PositionRecheck" }
+        last_recheck_at:
+          type: string
+          nullable: true
+          description: Son recheck zamanı (ISO-8601 UTC). null → henüz tick atılmadı.
+
+    TradeTicket:
+      type: object
+      required: [id, symbol, side, timeframe, status, expires_at, ttl_seconds]
+      description: |
+        Broker'a manuel girmeden önce tek-bakış kart payload'ı. Karar
+        zincirinin gözlemleyicisi — yeni karar üretmez. Şema iki katmanlı:
+        `summary` (stable field, agent + UI), `technical_detail` (collapsed
+        derin veri), `display` (önceden hazırlanmış Türkçe stringler).
+      properties:
+        id: { type: string }
+        symbol: { type: string }
+        side: { type: string, enum: [long, short] }
+        timeframe: { type: string }
+        status: { type: string, enum: [active, insufficient_rr, invalid] }
+        expires_at: { type: string }
+        ttl_seconds: { type: integer }
+        summary:
+          type: object
+          additionalProperties: true
+          description: Entry/SL/TP/size/confidence/rr stable field'lar
+        technical_detail:
+          type: object
+          additionalProperties: true
+          description: 7 bölüm derin veri (konsensüs/piyasa/geçmiş/güvenlik/sizing/kalibrasyon/audit)
+        display:
+          type: object
+          additionalProperties: true
+          description: title, expiry_text, why_bullets, safety_lines (pre-rendered)
+
+    TradeTicketList:
+      type: object
+      required: [tickets, total]
+      properties:
+        tickets:
+          type: array
+          items: { $ref: "#/components/schemas/TradeTicket" }
+        total: { type: integer }
+        last_built_at: { type: string, nullable: true }
+
+    Notification:
+      type: object
+      required: [id, ts, type, priority, title, body_short]
+      properties:
+        id: { type: string }
+        ts: { type: string }
+        type:
+          type: string
+          enum:
+            - ticket_created
+            - ticket_expiring
+            - ticket_expired
+            - ticket_blocked
+            - recheck_exit_recommend
+            - recheck_reduce
+            - risk_gate_changed
+            - risk_kill_switch
+            - catalyst_imminent
+            - dqs_dropped
+            - position_near_sl
+            - position_near_tp
+        priority:
+          type: string
+          enum: [critical, high, medium, low]
+        title: { type: string }
+        body_short: { type: string }
+        body_long: { type: string }
+        ticket_id: { type: string, nullable: true }
+        position_id: { type: string, nullable: true }
+        actions:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        ack: { type: boolean }
+
+    NotificationList:
+      type: object
+      required: [notifications, unread_count, total]
+      properties:
+        notifications:
+          type: array
+          items: { $ref: "#/components/schemas/Notification" }
+        unread_count: { type: integer }
+        total: { type: integer }
+
+    PositionRecheck:
+      type: object
+      required: [position_id, symbol, timeframe, side, verdict, reason, pnl_pct, checked_at]
+      properties:
+        position_id: { type: string }
+        symbol: { type: string }
+        timeframe: { type: string }
+        side: { type: string, enum: [long, short] }
+        verdict: { type: string, enum: [OK, WATCH, REDUCE, EXIT_RECOMMEND] }
+        reason: { type: string }
+        fresh_action:
+          type: string
+          nullable: true
+          enum: [open_long, open_short, hold, blocked, null]
+        fresh_direction:
+          type: string
+          nullable: true
+          enum: [bullish, bearish, neutral, null]
+        fresh_confidence: { type: number, nullable: true }
+        pnl_pct: { type: number }
+        checked_at: { type: string }
+
+    ManualReadyTrade:
+      type: object
+      required: [id, symbol, timeframe, side, requested_at, size_multiplier]
+      properties:
+        id: { type: string }
+        symbol: { type: string }
+        timeframe: { type: string }
+        side: { type: string, description: "long | short" }
+        requested_at: { type: string }
+        size_multiplier: { type: number }
+        requested_price: { type: number }
+        reason: { type: string }
+        fingerprint: { type: string }
+        snapshot_id: { type: string }
+        rejected_at: { type: string }
+
+    ManualReadyQueue:
+      type: object
+      required: [manual_ready, rejected_count]
+      properties:
+        manual_ready:
+          type: array
+          items: { $ref: "#/components/schemas/ManualReadyTrade" }
+        rejected_count:
+          type: integer
+          description: Silent-block aktif olan reddedilmiş sinyal sayısı.
+
+    ManualReadyActionResult:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          description: "opened | not_found | no_price | blocked | dismissed | rejected"
+        position_id: { type: string }
+        price: { type: number }
+        reason: { type: string }
+
+    TickResult:
+      type: object
+      required: [tick_at, signals_processed, actions]
+      properties:
+        tick_at: { type: string, format: date-time }
+        signals_processed: { type: integer }
+        actions:
+          type: array
+          items:
+            type: object
+            properties:
+              symbol: { type: string }
+              action: { type: string, enum: [open, close, hold, blocked] }
+              reason: { type: string }
+
+    CalibrationBin:
+      type: object
+      required: [bin_lo, bin_hi, predicted, observed, count]
+      properties:
+        bin_lo: { type: number }
+        bin_hi: { type: number }
+        predicted: { type: number }
+        observed: { type: number }
+        count: { type: integer }
+
+    LearningSummary:
+      type: object
+      required: [total_trades, win_rate, calibration]
+      properties:
+        total_trades: { type: integer }
+        min_sample:
+          type: integer
+          description: UX1 — Sharpe/win-rate'in istatistiksel anlam eşiği.
+        sample_sufficient:
+          type: boolean
+          description: UX1 — total_trades ≥ min_sample (false → INSUFFICIENT SAMPLE).
+        win_rate: { type: number }
+        sharpe: { type: number }
+        sortino: { type: number }
+        max_dd_pct: { type: number }
+        walk_forward:
+          type: object
+          properties:
+            train_window: { type: integer }
+            test_window: { type: integer }
+            test_sharpe: { type: number }
+            test_win_rate: { type: number }
+        calibration:
+          type: array
+          items: { $ref: "#/components/schemas/CalibrationBin" }
+        module_skew:
+          type: object
+          additionalProperties: { type: number }
+        weights_version: { type: string }
+        # L1 — timeframe-aware outcome breakdown'lar (additive). Her bucket:
+        # {trades, wins, losses, win_rate, total_pnl, avg_pnl, verified}.
+        outcomes_total: { type: integer }
+        verified_outcomes: { type: integer }
+        by_timeframe:
+          type: object
+          additionalProperties: { $ref: "#/components/schemas/OutcomeBucket" }
+        by_symbol:
+          type: object
+          additionalProperties: { $ref: "#/components/schemas/OutcomeBucket" }
+        by_regime:
+          type: object
+          additionalProperties: { $ref: "#/components/schemas/OutcomeBucket" }
+        by_dominant_module:
+          type: object
+          additionalProperties: { $ref: "#/components/schemas/OutcomeBucket" }
+        by_close_reason:
+          type: object
+          additionalProperties: { $ref: "#/components/schemas/OutcomeBucket" }
+        worker_last_run:
+          description: L1 — son learning worker koşusu metadata'sı (yoksa null).
+          anyOf:
+            - $ref: "#/components/schemas/LearningWorkerRun"
+            - type: "null"
+        proposal_status:
+          type: string
+          description: L1 — rebalance proposal durumu (PENDING/APPROVED/REJECTED/NONE).
+
+    OutcomeBucket:
+      type: object
+      description: >
+        L1 — timeframe/symbol/regime/module/close_reason kırılımı başına outcome
+        özeti (packages/learning/outcomes.py türetir; presentation-only).
+      required: [trades, wins, losses, win_rate, total_pnl, avg_pnl, verified]
+      properties:
+        trades: { type: integer }
+        wins: { type: integer }
+        losses: { type: integer }
+        win_rate: { type: number }
+        total_pnl: { type: number }
+        avg_pnl: { type: number }
+        verified: { type: integer }
+
+    LearningWorkerRun:
+      type: object
+      description: >
+        L1 — son learning worker koşusunun metadata'sı (apps/learning_worker
+        türetir). Karar üretmez; yalnızca koşu durumunu yüzeye taşır.
+      required:
+        [run_id, started_at, completed_at, status, outcomes_seen,
+         proposals_generated, calibration_status, errors]
+      properties:
+        run_id: { type: string }
+        started_at: { type: string, format: date-time }
+        completed_at: { type: string, format: date-time }
+        status: { type: string }
+        skipped_reason: { type: string, nullable: true }
+        outcomes_seen: { type: integer }
+        proposals_generated: { type: integer }
+        calibration_status: { type: string }
+        errors:
+          type: array
+          items: { type: string }
+
+    CorrelationEntry:
+      type: object
+      required: [symbol_a, symbol_b, rho, source, samples]
+      properties:
+        symbol_a: { type: string }
+        symbol_b: { type: string }
+        rho: { type: number }
+        source: { type: string, enum: [computed, baseline, neutral] }
+        samples: { type: integer }
+
+    ClusterPosition:
+      type: object
+      description: >
+        Risk — bir exposure cluster'ındaki tek açık paper pozisyon
+        (packages/risk/correlation.py serileştirir; presentation-only).
+      required: [id, symbol, side, size_usd]
+      properties:
+        id: { type: string }
+        symbol: { type: string }
+        side: { type: string, enum: [long, short] }
+        size_usd: { type: number }
+
+    ExposureCluster:
+      type: object
+      required: [symbols, positions, total_usd, cluster_pct, status]
+      properties:
+        symbols:
+          type: array
+          items: { type: string }
+        positions:
+          type: array
+          items: { $ref: "#/components/schemas/ClusterPosition" }
+        total_usd: { type: number }
+        cluster_pct: { type: number }
+        status: { type: string, enum: [OK, WARNING, BREACH] }
+
+    CorrelationState:
+      type: object
+      required: [threshold, max_cluster_pct, symbols, matrix, clusters]
+      properties:
+        threshold: { type: number }
+        max_cluster_pct: { type: number }
+        window_days: { type: integer }
+        min_overlap_days: { type: integer }
+        symbols:
+          type: array
+          items: { type: string }
+        matrix:
+          type: array
+          items: { $ref: "#/components/schemas/CorrelationEntry" }
+        clusters:
+          type: array
+          items: { $ref: "#/components/schemas/ExposureCluster" }
+        open_position_count: { type: integer }
+        equity_usd: { type: number }
+        insufficient_pairs:
+          type: array
+          items: { type: string }
+
+    HaltEvent:
+      type: object
+      required: [id, type, level, started_at, reason, active]
+      properties:
+        id: { type: string }
+        type: { type: string, enum: [DAILY_LOSS, MAX_DRAWDOWN] }
+        level: { type: string, enum: [KILL_SWITCH, RISK_REDUCE] }
+        started_at: { type: string, format: date-time }
+        reason: { type: string }
+        evidence:
+          type: array
+          items: { type: string }
+        active: { type: boolean }
+        cleared_at: { type: string, format: date-time, nullable: true }
+        cleared_by: { type: string, nullable: true }
+
+    HaltMetrics:
+      type: object
+      required: [equity_usd, daily_pnl_usd, daily_loss_limit_usd, daily_loss_ratio, drawdown_pct, max_drawdown_pct, drawdown_ratio]
+      properties:
+        equity_usd: { type: number }
+        peak_equity_usd: { type: number }
+        daily_pnl_usd: { type: number }
+        daily_loss_limit_usd: { type: number }
+        daily_loss_ratio: { type: number }
+        drawdown_pct: { type: number }
+        max_drawdown_pct: { type: number }
+        drawdown_ratio: { type: number }
+
+    HaltsState:
+      type: object
+      required: [halt_active, active, timeline, metrics]
+      properties:
+        halt_active: { type: boolean }
+        active:
+          type: array
+          items: { $ref: "#/components/schemas/HaltEvent" }
+        timeline:
+          type: array
+          items: { $ref: "#/components/schemas/HaltEvent" }
+        metrics: { $ref: "#/components/schemas/HaltMetrics" }
+        reset_hint: { type: string }
+
+    HaltResetResult:
+      type: object
+      required: [cleared_count, cleared]
+      properties:
+        cleared_count: { type: integer }
+        cleared:
+          type: array
+          items: { $ref: "#/components/schemas/HaltEvent" }
+
+    Timeframe:
+      type: string
+      enum: ["15m", "1h", "4h", "1d", "1w"]
+      default: "1d"
+      description: T0 — sinyal uzayı (symbol, timeframe) ile anahtarlanır.
+
+    CatalystEventType:
+      type: string
+      description: v2.7 D5 — kural tabanlı (deterministik) catalyst event tipi.
+      enum:
+        - geopolitical_deescalation
+        - geopolitical_escalation
+        - inflation_data
+        - jobs_data
+        - central_bank
+        - oil_supply
+        - oil_inventory
+        - crypto_etf_flow
+        - funding_oi_squeeze
+        - earnings
+        - exchange_outage
+        - rumor_unverified
+        - unknown
+
+    CatalystActionability:
+      type: string
+      description: >
+        v2.7 D5 — yalnızca kısıtlayıcı taksonomi. CONTEXT_ONLY karar zincirine
+        girmez (yalnızca bağlam); WATCH uyarı; CAUTION size ×0.5;
+        NO_POSITION_INCREASE yeni pozisyon açılışını durdurur.
+      enum: [CONTEXT_ONLY, WATCH, CAUTION, NO_POSITION_INCREASE]
+
+    CatalystImpact:
+      type: object
+      description: >
+        v2.7 D5 — haber → catalyst half-life etkisi. Başlık kural tabanlı
+        (deterministik, LLM YOK) bir event_type'a sınıflandırılır; event_type'a
+        göre asset × timeframe etki haritası + yarı-ömür + valid_until +
+        actionability üretilir. Karar zincirinde YALNIZCA kısıtlayıcı; rumor
+        (verified=false) ve yarı-ömrü dolmuş catalyst yalnızca bağlamdır.
+      required: [catalyst_id, event_type, actionability, verified]
+      properties:
+        catalyst_id: { type: string }
+        headline_id: { type: string }
+        event_type: { $ref: "#/components/schemas/CatalystEventType" }
+        surprise_level: { type: number, minimum: -1, maximum: 1 }
+        affected_assets:
+          type: array
+          items: { type: string }
+        expected_half_life_minutes: { type: integer }
+        affected_timeframes:
+          type: array
+          items: { $ref: "#/components/schemas/Timeframe" }
+        timeframe_bias:
+          type: object
+          additionalProperties: { type: string, enum: [bullish, bearish, neutral] }
+        valid_until: { type: string, format: date-time, nullable: true }
+        decay_curve: { type: string, enum: [exponential, linear, step] }
+        confidence: { type: number, minimum: 0, maximum: 1 }
+        actionability: { $ref: "#/components/schemas/CatalystActionability" }
+        verified: { type: boolean }
+        source: { type: string }
+        region: { type: string, nullable: true }
+        freshness: { type: string, enum: [FRESH, RECENT, STALE], nullable: true }
+        ts: { type: string, format: date-time }
+        evidence:
+          type: array
+          items: { type: string }
+
+    CatalystSummary:
+      type: object
+      description: >
+        v2.7 D5 — DecisionMatrix banner özeti (yalnızca verified + yarı-ömrü
+        dolmamış + kısıtlayıcı catalyst'ler). Etkilenen hücreler ayrıca
+        cell.blocked_by="catalyst_risk:*" taşır.
+      required: [catalyst_id, event_type, actionability]
+      properties:
+        catalyst_id: { type: string }
+        headline_id: { type: string }
+        event_type: { $ref: "#/components/schemas/CatalystEventType" }
+        actionability: { $ref: "#/components/schemas/CatalystActionability" }
+        affected_assets:
+          type: array
+          items: { type: string }
+        affected_timeframes:
+          type: array
+          items: { $ref: "#/components/schemas/Timeframe" }
+        expected_half_life_minutes: { type: integer }
+        valid_until: { type: string, format: date-time, nullable: true }
+        surprise_level: { type: number }
+        confidence: { type: number }
+        verified: { type: boolean }
+
+    TimeframeDecision:
+      type: object
+      description: >
+        T2 — matrix hücresi. candidate_action = consensus niyeti
+        (gate'lerden önce); action = final karar; blocked_by hangi kapının
+        kestiğini söyler. Rozet (status) backend'de hesaplanır.
+      required: [symbol, timeframe, action]
+      properties:
+        symbol: { type: string }
+        timeframe: { $ref: "#/components/schemas/Timeframe" }
+        action: { type: string, enum: [open_long, open_short, hold, blocked, watch] }
+        candidate_action: { type: string, enum: [open_long, open_short, hold, blocked, watch] }
+        score: { type: number }
+        direction: { type: string, enum: [bullish, bearish, neutral] }
+        confidence: { type: number }
+        size_multiplier: { type: number }
+        reason: { type: string }
+        blocked_by:
+          type: array
+          items: { type: string }
+        actionable: { type: boolean }
+        status: { type: string, enum: [ACTIONABLE, NOT_ACTIONABLE, SUSPENDED] }
+        paper_action: { type: string, enum: [open_long, open_short, none] }
+
+    DecisionMatrix:
+      type: object
+      description: T2 — symbol × timeframe karar matrisi ViewModel.
+      required: [generated_at, symbols, timeframes, cells]
+      properties:
+        generated_at: { type: string, format: date-time }
+        symbols:
+          type: array
+          items: { type: string }
+        timeframes:
+          type: array
+          items: { $ref: "#/components/schemas/Timeframe" }
+        regime: { type: string }
+        risk_gate:
+          type: object
+          properties:
+            action: { type: string }
+            reason: { type: string }
+            evidence:
+              type: array
+              items: { type: string }
+        dqs_status: { type: string, enum: [OK, DEGRADED, BLOCKED] }
+        suspended:
+          type: boolean
+          description: KILL_SWITCH / RISK_REDUCE / NO_POSITION_INCREASE / DQS BLOCKED → tüm hücreler SUSPENDED.
+        event_risk: { $ref: "#/components/schemas/EventRiskView" }
+        derivatives:
+          type: array
+          description: >
+            v2.7 D2 — per-symbol türev özeti (banner). Etkilenen hücreler
+            cell.blocked_by="derivatives_risk:*" + reason ile zaten görünür.
+          items: { $ref: "#/components/schemas/DerivativesSummary" }
+        volatility:
+          type: array
+          description: >
+            v2.7 D4 — per (symbol, timeframe) realized vol özeti (banner).
+            Etkilenen hücreler cell.blocked_by="volatility_risk:*" ile görünür.
+          items: { $ref: "#/components/schemas/VolatilitySummary" }
+        catalysts:
+          type: array
+          description: >
+            v2.7 D5 — verified + yarı-ömrü dolmamış catalyst özeti (banner).
+            Etkilenen hücreler cell.blocked_by="catalyst_risk:*" ile görünür.
+          items: { $ref: "#/components/schemas/CatalystSummary" }
+        options:
+          type: array
+          description: >
+            v2.7 D3 — per-symbol options özeti (banner; rejim ≠ NORMAL).
+            Etkilenen hücreler cell.blocked_by="options_risk:*" ile görünür.
+          items: { $ref: "#/components/schemas/OptionsSummary" }
+        cells:
+          type: array
+          items: { $ref: "#/components/schemas/TimeframeDecision" }
+
+    OHLCVBar:
+      type: object
+      description: T1 — tek mum; ts = bar açılış zamanı (UTC).
+      required: [symbol, timeframe, ts, open, high, low, close]
+      properties:
+        symbol: { type: string }
+        timeframe: { $ref: "#/components/schemas/Timeframe" }
+        ts: { type: string, format: date-time }
+        open: { type: number }
+        high: { type: number }
+        low: { type: number }
+        close: { type: number }
+        volume: { type: number, nullable: true }
+        source: { type: string, description: "resample edilen barlarda resampled:<base_tf>" }
+        verified: { type: boolean }
+
+    TechnicalSnapshotTF:
+      type: object
+      description: >
+        T1 — gerçek OHLCV'den hesaplanan TF teknik özeti.
+        Bar yetersiz/stale ise alanlar null + status DEGRADED.
+      required: [timeframe, score, status]
+      properties:
+        timeframe: { $ref: "#/components/schemas/Timeframe" }
+        rsi: { type: number, nullable: true }
+        macd:
+          type: number
+          nullable: true
+          description: MACD(12/26/9) histogramı / close × 100 (normalize).
+        atr: { type: number, nullable: true }
+        ema_stack:
+          type: string
+          enum: [bullish, bearish, mixed]
+          nullable: true
+        score: { type: number }
+        status: { type: string, enum: [OK, DEGRADED] }
+        source: { type: string }
+        bars_used: { type: integer }
+        ts: { type: string, format: date-time }
+
+    TechnicalTf:
+      description: >
+        FE-friendly alias of TechnicalSnapshotTF — the per-(symbol,timeframe)
+        cell shape in DataSnapshot.technicals_by_tf. Same fields; named so the
+        friendly api.ts type maps to the contract (no schema drift).
+      allOf:
+        - $ref: "#/components/schemas/TechnicalSnapshotTF"
+
+    # ---------------- OPS — /data/snapshot yüzeyi (read-only) ----------------
+
+    ProviderStatus:
+      type: object
+      required: [status, calls, fallbacks]
+      properties:
+        status: { type: string, enum: [ok, degraded, down, unknown] }
+        last_success_at: { type: string, format: date-time, nullable: true }
+        last_error: { type: string, nullable: true }
+        calls: { type: integer }
+        fallbacks: { type: integer }
+
+    DqsBreakdown:
+      type: object
+      required: [score, status, freshness, completeness, drift, reconciliation, decision_usage, fallback_used, notes]
+      properties:
+        score: { type: number }
+        status: { type: string, enum: [OK, DEGRADED, BLOCKED] }
+        freshness: { type: number }
+        completeness: { type: number }
+        drift: { type: number }
+        reconciliation: { type: number }
+        decision_usage: { type: number }
+        fallback_used: { type: boolean }
+        notes:
+          type: array
+          items: { type: string }
+
+    LivePrice:
+      type: object
+      description: >
+        Tek sembol fiyatı. Politika: runtime'da mock fallback yok — live
+        başarısız → price=null, verified=false, status=DATA_UNAVAILABLE.
+        (status=MOCK yalnızca test fixture modunda.)
+      required: [symbol, ts, source, verified, status, fallback]
+      properties:
+        symbol: { type: string }
+        price: { type: number, nullable: true }
+        ts: { type: string, format: date-time }
+        source: { type: string }
+        verified: { type: boolean }
+        status: { type: string, enum: [OK, DATA_UNAVAILABLE, MOCK] }
+        error: { type: string, nullable: true }
+        fallback: { type: boolean }
+
+    ProvenanceMode:
+      type: object
+      description: Provenance damgası (LIVE / MOCK_MODE / SIMULATION / INSUFFICIENT_DATA).
+      required: [mock_mode, mock_warning, test_mock, label]
+      properties:
+        live_data: { type: boolean }
+        mock_mode: { type: boolean }
+        mock_warning: { type: boolean }
+        test_mock: { type: boolean }
+        dqs_status: { type: string }
+        label: { type: string }
+        advisory: { type: string }
+
+    DataSnapshot:
+      type: object
+      required: [meta, mode, prices, dqs, provider_status, warnings]
+      properties:
+        meta:
+          type: object
+          required: [snapshot_id, generated_at, symbols]
+          properties:
+            snapshot_id: { type: string }
+            generated_at: { type: string, format: date-time }
+            symbols:
+              type: array
+              items: { type: string }
+        mode: { $ref: "#/components/schemas/ProvenanceMode" }
+        prices:
+          type: array
+          items: { $ref: "#/components/schemas/LivePrice" }
+        dqs: { $ref: "#/components/schemas/DqsBreakdown" }
+        provider_status:
+          type: object
+          additionalProperties: { $ref: "#/components/schemas/ProviderStatus" }
+        warnings:
+          type: array
+          items: { type: string }
+        technicals_by_tf:
+          type: object
+          description: symbol → timeframe → TechnicalSnapshotTF.
+          additionalProperties:
+            type: object
+            additionalProperties: { $ref: "#/components/schemas/TechnicalSnapshotTF" }
+        derivatives:
+          type: object
+          description: >
+            v2.7 D2 — kripto türev zekâsı (symbol → DerivativesSnapshot).
+            Yalnızca kripto sembolleri. squeeze_proxy GERÇEK liquidation değil.
+          additionalProperties: { $ref: "#/components/schemas/DerivativesSnapshot" }
+        volatility:
+          type: object
+          description: >
+            v2.7 D4 — realized volatility / rejim (symbol → timeframe →
+            VolatilitySnapshot). Mevcut OHLCV cache'inden; yalnızca kısıtlayıcı.
+          additionalProperties:
+            type: object
+            additionalProperties: { $ref: "#/components/schemas/VolatilitySnapshot" }
+        options:
+          type: object
+          description: >
+            v2.7 D3 — options IV / skew / term structure (symbol →
+            OptionsSnapshot). Yalnızca BTC/ETH; skew_25d proxy (gerçek greeks
+            değil). Karar zincirinde yalnızca kısıtlayıcı.
+          additionalProperties: { $ref: "#/components/schemas/OptionsSnapshot" }
+        catalyst_impacts:
+          type: array
+          description: >
+            v2.7 D5 — haber → catalyst half-life zekâsı (deterministik; LLM yok).
+            Yalnızca verified + yarı-ömrü dolmamış impact karar zincirini kısıtlar.
+          items: { $ref: "#/components/schemas/CatalystImpact" }
+
+    # ---------------- v2.7 D2 — Crypto Derivatives Intelligence ----------------
+
+    SqueezeLevel:
+      type: string
+      enum: [NONE, LOW, ELEVATED, HIGH]
+      description: squeeze_proxy (0..100) seviyesi — PROXY, gerçek liquidation değil.
+
+    FundingBias:
+      type: string
+      enum: [crowded_long, crowded_short, neutral]
+
+    DerivativesSnapshot:
+      type: object
+      description: >
+        v2.7 D2 — tek kripto sembol için türev zekâsı (funding / OI / squeeze
+        proxy). Karar zincirinde YALNIZCA kısıtlayıcı (CAUTION / size-reduce /
+        NO_POSITION_INCREASE) veya bağlam etkisi yapar — asla size artırmaz,
+        asla RiskGate/DQS/halt'ı bypass etmez. squeeze_proxy GERÇEK liquidation
+        API'si DEĞİLDİR (is_proxy=true). Live başarısız → status=DEGRADED, alanlar
+        null (mock yok). Fixture verisi verified=false (karar zincirine girmez).
+      required: [symbol, squeeze_proxy, squeeze_level, funding_bias, is_proxy, status, source, verified, dqs, ts]
+      properties:
+        symbol: { type: string }
+        funding_rate: { type: number, nullable: true, description: "8s interval, ondalık (0.0001 = %0.01)" }
+        funding_annualized: { type: number, nullable: true }
+        open_interest_usd: { type: number, nullable: true }
+        oi_change_pct: { type: number, nullable: true }
+        price_momentum_pct: { type: number, nullable: true }
+        volatility_pct: { type: number, nullable: true }
+        squeeze_proxy: { type: number, description: "0..100 — PROXY, gerçek liq değil" }
+        squeeze_level: { $ref: "#/components/schemas/SqueezeLevel" }
+        funding_bias: { $ref: "#/components/schemas/FundingBias" }
+        is_proxy: { type: boolean }
+        status: { type: string, enum: [OK, DEGRADED] }
+        source: { type: string }
+        verified: { type: boolean }
+        freshness: { type: string, enum: [FRESH, RECENT, STALE], nullable: true }
+        dqs: { type: number }
+        ts: { type: string, format: date-time }
+        evidence:
+          type: array
+          items: { type: string }
+        error: { type: string, nullable: true }
+
+    DerivativesSummary:
+      type: object
+      description: >
+        v2.7 D2 — matrix banner için per-symbol türev özeti (yalnızca status=OK).
+        Etkilenen hücreler ayrıca cell.blocked_by="derivatives_risk:*" taşır.
+      required: [symbol, squeeze_level, squeeze_proxy, funding_bias, is_proxy, status, verified]
+      properties:
+        symbol: { type: string }
+        squeeze_level: { $ref: "#/components/schemas/SqueezeLevel" }
+        squeeze_proxy: { type: number }
+        funding_bias: { $ref: "#/components/schemas/FundingBias" }
+        funding_rate: { type: number, nullable: true }
+        is_proxy: { type: boolean }
+        status: { type: string, enum: [OK, DEGRADED] }
+        verified: { type: boolean }
+
+    # ---------------- v2.7 D4 — Realized Volatility / Volatility Regime ----------------
+
+    VolatilityRegime:
+      type: string
+      enum: [LOW, NORMAL, ELEVATED, EXTREME]
+      description: realized vol z-skoru rejimi (yalnızca kısıtlayıcı bağlam).
+
+    VolState:
+      type: string
+      enum: [normal, squeeze, expansion, shock]
+      description: vol squeeze / expansion / shock bağlam bayrağı.
+
+    VolatilitySnapshot:
+      type: object
+      description: >
+        v2.7 D4 — tek (symbol, timeframe) için realized volatility + rejim
+        zekâsı. Mevcut OHLCV cache'inden log-getiri tabanlı annualize realized
+        vol, rejim ve squeeze/expansion/shock bağlamı. Karar zincirinde YALNIZCA
+        kısıtlayıcı (CAUTION / size-reduce / NO_POSITION_INCREASE) veya bağlam
+        etkisi yapar — asla size artırmaz, asla RiskGate/DQS/halt'ı bypass etmez.
+        Bar yetersiz → status=DEGRADED, alanlar null (mock yok). Fixture barlar
+        verified=false (karar zincirine girmez).
+      required: [symbol, timeframe, regime, vol_state, status, source, verified, dqs, bars_used, ts]
+      properties:
+        symbol: { type: string }
+        timeframe: { $ref: "#/components/schemas/Timeframe" }
+        realized_vol: { type: number, nullable: true, description: "annualize medium-pencere realized vol (0.65 = %65)" }
+        rv_short: { type: number, nullable: true }
+        rv_medium: { type: number, nullable: true }
+        rv_long: { type: number, nullable: true }
+        vol_zscore: { type: number, nullable: true }
+        regime: { $ref: "#/components/schemas/VolatilityRegime" }
+        vol_state: { $ref: "#/components/schemas/VolState" }
+        status: { type: string, enum: [OK, DEGRADED] }
+        source: { type: string }
+        verified: { type: boolean }
+        freshness: { type: string, enum: [FRESH, RECENT, STALE], nullable: true }
+        dqs: { type: number }
+        bars_used: { type: integer }
+        ts: { type: string, format: date-time }
+        evidence:
+          type: array
+          items: { type: string }
+        error: { type: string, nullable: true }
+
+    VolatilitySummary:
+      type: object
+      description: >
+        v2.7 D4 — matrix banner için per (symbol, timeframe) vol özeti (yalnızca
+        status=OK + dikkat çeken hücreler). Etkilenen hücreler ayrıca
+        cell.blocked_by="volatility_risk:*" taşır.
+      required: [symbol, timeframe, regime, vol_state, status, verified]
+      properties:
+        symbol: { type: string }
+        timeframe: { $ref: "#/components/schemas/Timeframe" }
+        regime: { $ref: "#/components/schemas/VolatilityRegime" }
+        vol_state: { $ref: "#/components/schemas/VolState" }
+        realized_vol: { type: number, nullable: true }
+        vol_zscore: { type: number, nullable: true }
+        status: { type: string, enum: [OK, DEGRADED] }
+        verified: { type: boolean }
+
+    # ---------------- v2.7 D3 — Options IV / Skew / Term Structure ----------------
+
+    OptionsRegime:
+      type: string
+      enum: [NORMAL, RICH_VOL, CHEAP_VOL, PUT_SKEW_STRESS, CALL_SKEW_EUPHORIA, TERM_STRESS]
+      description: >
+        Options stress rejimi (yalnızca kısıtlayıcı / bağlam). RICH_VOL/CHEAP_VOL
+        IV-RV spread; PUT_SKEW_STRESS/CALL_SKEW_EUPHORIA 25Δ skew proxy;
+        TERM_STRESS backwardation.
+
+    OptionsStatus:
+      type: string
+      enum: [OK, DEGRADED, UNAVAILABLE]
+
+    OptionsSnapshot:
+      type: object
+      description: >
+        v2.7 D3 — tek kripto sembol için options (IV / skew / term structure)
+        zekâsı. Deribit (veya fixture) chain'inden ATM IV, 25Δ skew proxy,
+        put/call OI oranı, term structure ve realized-vs-implied spread. Karar
+        zincirinde YALNIZCA kripto (BTC/ETH) + YALNIZCA kısıtlayıcı (CAUTION /
+        size-reduce / NO_POSITION_INCREASE) veya bağlam — asla size artırmaz,
+        asla RiskGate/DQS/halt'ı bypass etmez. skew_25d GERÇEK 25Δ greeks
+        DEĞİLDİR (is_proxy=true; moneyness proxy). Live başarısız →
+        status=DEGRADED/UNAVAILABLE, alanlar null (mock yok). Fixture verisi
+        verified=false (karar zincirine girmez).
+      required: [symbol, contracts_used, regime, is_proxy, status, source, verified, dqs, ts]
+      properties:
+        symbol: { type: string }
+        underlying_price: { type: number, nullable: true }
+        atm_iv: { type: number, nullable: true, description: "ön vade ATM IV (annualize ondalık; 0.55 = %55)" }
+        realized_vol: { type: number, nullable: true }
+        iv_rv_spread: { type: number, nullable: true, description: "atm_iv − realized_vol (pozitif = IV pahalı)" }
+        skew_25d: { type: number, nullable: true, description: "risk reversal proxy = call_iv − put_iv (negatif = put skew)" }
+        put_call_oi_ratio: { type: number, nullable: true }
+        term_front_iv: { type: number, nullable: true }
+        term_next_iv: { type: number, nullable: true }
+        term_long_iv: { type: number, nullable: true }
+        term_slope: { type: number, nullable: true, description: "term_long_iv − term_front_iv (negatif = backwardation)" }
+        front_expiry: { type: string, nullable: true }
+        next_expiry: { type: string, nullable: true }
+        long_expiry: { type: string, nullable: true }
+        contracts_used: { type: integer }
+        regime: { $ref: "#/components/schemas/OptionsRegime" }
+        is_proxy: { type: boolean }
+        status: { $ref: "#/components/schemas/OptionsStatus" }
+        source: { type: string }
+        verified: { type: boolean }
+        freshness: { type: string, enum: [FRESH, RECENT, STALE], nullable: true }
+        dqs: { type: number }
+        ts: { type: string, format: date-time }
+        evidence:
+          type: array
+          items: { type: string }
+        error: { type: string, nullable: true }
+
+    OptionsSummary:
+      type: object
+      description: >
+        v2.7 D3 — matrix banner için per-symbol options özeti (yalnızca status=OK
+        + rejim ≠ NORMAL). Etkilenen hücreler ayrıca cell.blocked_by=
+        "options_risk:*" taşır. skew_25d proxy (gerçek greeks değil).
+      required: [symbol, regime, is_proxy, source, status, verified]
+      properties:
+        symbol: { type: string }
+        regime: { $ref: "#/components/schemas/OptionsRegime" }
+        atm_iv: { type: number, nullable: true }
+        realized_vol: { type: number, nullable: true }
+        iv_rv_spread: { type: number, nullable: true }
+        skew_25d: { type: number, nullable: true }
+        put_call_oi_ratio: { type: number, nullable: true }
+        term_slope: { type: number, nullable: true }
+        front_expiry: { type: string, nullable: true }
+        next_expiry: { type: string, nullable: true }
+        long_expiry: { type: string, nullable: true }
+        is_proxy: { type: boolean }
+        source: { type: string }
+        freshness: { type: string, enum: [FRESH, RECENT, STALE], nullable: true }
+        status: { $ref: "#/components/schemas/OptionsStatus" }
+        verified: { type: boolean }
+
+    # ---------------- OPS — /learning/* yüzeyi (read-only) ----------------
+
+    TfCalibrationRow:
+      type: object
+      required: [timeframe, strategy, trades, win_rate, trust]
+      properties:
+        timeframe: { type: string }
+        strategy: { type: string }
+        trades: { type: integer }
+        win_rate: { type: number }
+        expectancy: { type: number }
+        trust: { type: string, enum: [PRIOR, CALIBRATED] }
+
+    TfWeightDeltaRow:
+      type: object
+      required: [strategy, timeframe, old, new, delta]
+      properties:
+        strategy: { type: string }
+        timeframe: { type: string }
+        old: { type: number }
+        new: { type: number }
+        delta: { type: number }
+
+    TfWeightsReport:
+      type: object
+      description: >
+        Step 8 per-TF calibration + trust-gated tf_weights proposal. Informational —
+        live weights are never moved here (owner approval, never auto-apply).
+      required: [tf_weights_trusted, per_timeframe, proposal_status, deltas]
+      properties:
+        tf_weights_trusted: { type: boolean }
+        min_trades_per_tf: { type: integer, nullable: true }
+        calibrated_timeframes:
+          type: array
+          items: { type: string }
+        per_timeframe:
+          type: array
+          items: { $ref: "#/components/schemas/TfCalibrationRow" }
+        proposal_status: { type: string }
+        deltas:
+          type: array
+          items: { $ref: "#/components/schemas/TfWeightDeltaRow" }
+        note: { type: string }
+
+    CalibrationParams:
+      type: object
+      required: [a, b, samples, status]
+      properties:
+        a: { type: number }
+        b: { type: number }
+        samples: { type: integer }
+        fitted_at: { type: string, format: date-time, nullable: true }
+        status: { type: string, enum: [identity, fitted, insufficient] }
+
+    CalibrationState:
+      type: object
+      required: [params, min_required, samples_in_state, bins]
+      properties:
+        params: { $ref: "#/components/schemas/CalibrationParams" }
+        min_required: { type: integer }
+        samples_in_state: { type: integer }
+        bins:
+          type: array
+          items: { $ref: "#/components/schemas/CalibrationBin" }
+
+    MistakeRecord:
+      type: object
+      required: [fingerprint, trades, wins, losses, win_rate, total_pnl, streak_losses]
+      properties:
+        fingerprint: { type: string }
+        trades: { type: integer }
+        wins: { type: integer }
+        losses: { type: integer }
+        win_rate: { type: number }
+        total_pnl: { type: number }
+        last_seen_at: { type: string, format: date-time, nullable: true }
+        streak_losses: { type: integer }
+
+    MistakeVerdict:
+      type: object
+      required: [fingerprint, action, reason, size_factor, evidence]
+      properties:
+        fingerprint: { type: string }
+        action: { type: string, enum: [NEUTRAL, AVOID, BOOST, WARNING] }
+        reason: { type: string }
+        size_factor: { type: number }
+        evidence:
+          type: array
+          items: { type: string }
+
+    MistakesState:
+      type: object
+      required: [thresholds, records, verdicts, flagged_count, total_fingerprints]
+      properties:
+        thresholds:
+          type: object
+          additionalProperties: { type: number }
+        records:
+          type: array
+          items: { $ref: "#/components/schemas/MistakeRecord" }
+        verdicts:
+          type: array
+          items: { $ref: "#/components/schemas/MistakeVerdict" }
+        flagged_count: { type: integer }
+        total_fingerprints: { type: integer }
+
+    WeightDelta:
+      type: object
+      required: [module, old, new, delta]
+      properties:
+        module: { type: string }
+        old: { type: number }
+        new: { type: number }
+        delta: { type: number }
+
+    ModulePerf:
+      type: object
+      required: [module, trades, win_rate]
+      properties:
+        module: { type: string }
+        trades: { type: integer }
+        wins: { type: integer }
+        win_rate: { type: number }
+        avg_pnl: { type: number }
+        total_pnl: { type: number }
+        score: { type: number }
+
+    RebalanceProposalRecord:
+      type: object
+      description: G2 — owner onayı bekleyen / geçmiş ağırlık önerisi (additive alanlı).
+      required: [status]
+      properties:
+        status: { type: string, enum: [PENDING, APPROVED, REJECTED] }
+        from_version: { type: string }
+        to_version: { type: string }
+        generated_at: { type: string, format: date-time }
+        regime: { type: string }
+        deltas:
+          type: array
+          items: { $ref: "#/components/schemas/WeightDelta" }
+        evidence:
+          type: array
+          items: { $ref: "#/components/schemas/ModulePerf" }
+
+    RebalanceState:
+      type: object
+      required: [active_version, history]
+      properties:
+        active_version: { type: string }
+        current:
+          oneOf:
+            - { $ref: "#/components/schemas/RebalanceProposalRecord" }
+            - { type: "null" }
+        history:
+          type: array
+          items: { $ref: "#/components/schemas/RebalanceProposalRecord" }
+
+    # ---------------- R1 — gerçek snapshot replay foundation ----------------
+    # Replay = kaydedilmiş gerçek state'in incelenmesi. Sahte backtest / uydurma
+    # geçmiş performans YOK. PAPER_SAFE / NO_EXECUTION: replay emir üretmez,
+    # paper pozisyon açmaz, RiskGate'i bypass etmez, live provider çağırmaz.
+
+    MainBlocker:
+      type: object
+      description: >
+        UX1 — agent'ın TEK ana engeli ("veya" yok). Öncelik DQS/provider >
+        halt/kill-switch > RiskGate kısıtı.
+      required: [code, label, detail]
+      properties:
+        code:
+          type: string
+          enum: [DQS_BLOCKED, HALT, PROVIDER_DOWN, RISK_GATE, NONE]
+        label: { type: string }
+        detail: { type: string }
+
+    WatchCondition:
+      type: object
+      description: UX1 — agent'ın izlediği bir sonraki tetik koşulu (deterministik).
+      required: [key, label]
+      properties:
+        key: { type: string }
+        label: { type: string }
+        detail: { type: string }
+
+    AgentBriefCandidate:
+      type: object
+      description: >
+        UX1 — AgentBrief.top_candidates'taki tek aday (decision matrix hücresinin
+        özet projeksiyonu; packages/decision/cockpit.py türetir). Tüm alanlar
+        opsiyonel — backend hücreden `.get()` ile okur. Presentation-only.
+      properties:
+        symbol: { type: string }
+        timeframe: { $ref: "#/components/schemas/Timeframe" }
+        direction: { type: string, enum: [bullish, bearish, neutral] }
+        score: { type: number }
+        candidate_action: { type: string }
+        final_action: { type: string }
+        actionable: { type: boolean }
+        status: { type: string, enum: [ACTIONABLE, NOT_ACTIONABLE, SUSPENDED] }
+
+    AgentBrief:
+      type: object
+      description: >
+        UX1 — ilk-ekran tek ana kart: agent şu an ne yapabilir, ana engel ne,
+        ne izliyor. Tüm türetilmiş alanlar backend'de (frontend hesap yapmaz).
+      required: [status, can_act, main_blocker, data_mode, summary, recommended_stance]
+      properties:
+        status:
+          type: string
+          enum: [ACTIONABLE, NO_ACTION, WATCHING, FROZEN, BLOCKED]
+        can_act: { type: boolean }
+        main_blocker: { $ref: "#/components/schemas/MainBlocker" }
+        summary: { type: string }
+        data_mode:
+          type: string
+          enum: [LIVE_VERIFIED, LIVE_DEGRADED, PARTIAL_FALLBACK, SIMULATION, BLOCKED]
+        regime: { type: string, nullable: true }
+        dqs:
+          type: object
+          additionalProperties: true
+        risk:
+          type: object
+          additionalProperties: true
+        open_paper_positions: { type: integer }
+        top_blockers:
+          type: array
+          items: { type: string }
+        top_candidates:
+          type: array
+          items: { $ref: "#/components/schemas/AgentBriefCandidate" }
+        next_watch_conditions:
+          type: array
+          items: { $ref: "#/components/schemas/WatchCondition" }
+        recommended_stance: { type: string }
+        paper_state_summary:
+          type: object
+          additionalProperties: true
+        generated_at: { type: string, format: date-time }
+
+    DecisionTrace:
+      type: object
+      description: >
+        UX1 — candidate→final karar izi: ne istendi, neye düştü, hangi kapı
+        kesti, kanıt referansları. Stored/live state'i açıklar; karar üretmez.
+      required: [candidate_decisions, final_decisions, blocked_by]
+      properties:
+        candidate_decisions:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        final_decisions:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        blocked_by:
+          type: array
+          items: { type: string }
+        risk_gate:
+          type: object
+          additionalProperties: true
+          nullable: true
+        restrictive_gates:
+          type: array
+          items: { type: string }
+        paper_action:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        evidence_refs:
+          type: array
+          items: { type: string }
+
+    CockpitBrief:
+      type: object
+      description: >
+        UX1 — Agent Operating Cockpit özeti (tek çağrı). AgentBrief + DecisionTrace
+        ilk-ekranı besler. Read-only; yeni karar/emir/live çağrı YOK. PAPER_SAFE.
+      required: [agent_brief, decision_trace]
+      properties:
+        generated_at: { type: string, format: date-time }
+        mode:
+          type: object
+          additionalProperties: true
+        agent_brief: { $ref: "#/components/schemas/AgentBrief" }
+        decision_trace: { $ref: "#/components/schemas/DecisionTrace" }
+
+    ReplayStatus:
+      type: object
+      description: >
+        R1 — replay store durumu. status=active (kayıt var) / empty (kayıt yok).
+        mode=active_snapshot_replay / insufficient_snapshots /
+        reserved_not_active. Rolling backtest motoru aktif değil.
+      required: [status, available, mode, snapshot_count]
+      properties:
+        status: { type: string, enum: [active, empty, reserved_not_active] }
+        available: { type: boolean }
+        mode:
+          type: string
+          enum: [active_snapshot_replay, insufficient_snapshots, reserved_not_active]
+        snapshot_count: { type: integer }
+        latest_snapshot_id: { type: string, nullable: true }
+        latest_generated_at: { type: string, format: date-time, nullable: true }
+        schema_version: { type: integer }
+        reason: { type: string }
+        execution: { type: string, enum: [no_live_execution] }
+
+    ReplaySnapshot:
+      type: object
+      description: >
+        R1 — kayıtlı snapshot zarfı. `snapshot` alanı diske yazılmış gerçek
+        state'tir (data_snapshot / decision_matrix / risk_state /
+        paper_state_summary / provider_status / dqs / mode / schema_version).
+      required: [snapshot_id, status, available, snapshot]
+      properties:
+        snapshot_id: { type: string }
+        status: { type: string, enum: [active] }
+        available: { type: boolean }
+        execution: { type: string, enum: [no_live_execution] }
+        snapshot:
+          type: object
+          additionalProperties: true
+
+    ReplayDecisionTrace:
+      type: object
+      description: >
+        R1 — kayıtlı decision_matrix'ten projekte edilen karar izi. Yalnızca
+        stored state'i açıklar; yeni karar hesaplamaz, live provider çağırmaz.
+      required: [snapshot_id, available, top_candidates, final_decisions]
+      properties:
+        snapshot_id: { type: string }
+        generated_at: { type: string, format: date-time, nullable: true }
+        schema_version: { type: integer }
+        available: { type: boolean }
+        execution: { type: string, enum: [no_live_execution] }
+        note: { type: string }
+        mode:
+          type: object
+          additionalProperties: true
+          nullable: true
+        dqs:
+          type: object
+          additionalProperties: true
+          nullable: true
+        regime: { type: string, nullable: true }
+        suspended: { type: boolean }
+        risk_gate:
+          type: object
+          additionalProperties: true
+          nullable: true
+        top_candidates:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        final_decisions:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        blocked_by_reasons:
+          type: array
+          items: { type: string }
+        paper_actions:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        paper_state_summary:
+          type: object
+          additionalProperties: true
+          nullable: true
+        provider_issues:
+          type: object
+          additionalProperties: true
+        deep_data:
+          type: object
+          additionalProperties: true
+
+    # ---------------- R2 — deterministic rolling backtest ----------------
+    # Stored snapshot serisi üzerinde outcome ölçümü. Live refetch / sahte geçmiş
+    # YOK; look-ahead yok (yalnızca GERÇEK gelecek snapshot'larla ölçer).
+    # PAPER_SAFE / NO_EXECUTION: paper açmaz, decide_matrix yeniden çalışmaz.
+
+    ReplayBacktestMetrics:
+      type: object
+      description: >
+        R2 — bir küme (genel / per-timeframe / per-symbol / per-horizon) için
+        outcome metrikleri. Yetersiz örnekte oranlar null (uydurma 0 değil).
+      required: [signals_evaluated, suppressed_evaluated]
+      properties:
+        signals_evaluated: { type: integer }
+        hits: { type: integer }
+        hit_rate: { type: number, nullable: true }
+        false_positive: { type: integer }
+        false_positive_rate: { type: number, nullable: true }
+        false_negative: { type: integer }
+        false_negative_rate: { type: number, nullable: true }
+        suppressed_evaluated: { type: integer }
+        avg_return: { type: number, nullable: true }
+        max_drawdown: { type: number, nullable: true }
+        blocked_decision_accuracy: { type: number, nullable: true }
+
+    ReplayBacktest:
+      type: object
+      description: >
+        R2 — deterministik rolling backtest sonucu. status=ok /
+        insufficient_snapshots (store boş) / insufficient_future_data (ölçülebilir
+        gelecek yok). run_id store üzerinde deterministiktir; sahte geçmiş run
+        saklanmaz. execution=no_live_execution.
+      required: [run_id, status, available, execution, snapshot_count, metrics]
+      properties:
+        run_id: { type: string }
+        algo_version: { type: integer }
+        status:
+          type: string
+          enum: [ok, insufficient_snapshots, insufficient_future_data]
+        available: { type: boolean }
+        execution: { type: string, enum: [no_live_execution] }
+        reason: { type: string }
+        snapshot_count: { type: integer }
+        usable_snapshot_count: { type: integer }
+        evaluated_snapshots: { type: integer }
+        horizons:
+          type: array
+          items: { type: string }
+        window:
+          type: object
+          additionalProperties: true
+          nullable: true
+        metrics: { $ref: "#/components/schemas/ReplayBacktestMetrics" }
+        per_timeframe:
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/ReplayBacktestMetrics"
+        per_symbol:
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/ReplayBacktestMetrics"
+        per_horizon:
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/ReplayBacktestMetrics"
+        coverage:
+          type: object
+          additionalProperties: true
+
+    # ── Market sessions (read-only, paper-safe) — backend owns session meaning ──
+    MarketSessionStatusView:
+      type: object
+      description: >
+        One market's session status at generated_at. Backend-derived (timezone /
+        DST / holidays); the frontend renders these fields and computes nothing.
+      required:
+        [market_id, label, exchange, timezone, is_open, session_phase,
+         liquidity_tone, volatility_window, holiday_verified, diagnostics]
+      properties:
+        market_id: { type: string }
+        label: { type: string }
+        exchange: { type: string }
+        timezone: { type: string }
+        is_open: { type: boolean }
+        is_holiday: { type: boolean, nullable: true }
+        open_time_utc: { type: string, format: date-time, nullable: true }
+        close_time_utc: { type: string, format: date-time, nullable: true }
+        minutes_to_open: { type: integer, nullable: true }
+        minutes_to_close: { type: integer, nullable: true }
+        session_phase:
+          type: string
+          enum: [closed, pre_open, opening_window, mid_session, closing_window, after_close, unknown]
+        liquidity_tone:
+          type: string
+          enum: [high, normal, thin, closed, unknown]
+        volatility_window: { type: boolean }
+        holiday_verified:
+          type: boolean
+          description: false → holidays/early-closes unverified (calendar lib absent); see diagnostics.
+        diagnostics:
+          type: array
+          items: { type: string }
+
+    AssetSessionContextView:
+      type: object
+      required:
+        [asset_code, relevant_markets, any_relevant_market_open, session_risk,
+         reason, diagnostics]
+      properties:
+        asset_code: { type: string }
+        relevant_markets:
+          type: array
+          items: { $ref: "#/components/schemas/MarketSessionStatusView" }
+        any_relevant_market_open: { type: boolean }
+        primary_market_open: { type: boolean, nullable: true }
+        session_risk:
+          type: string
+          enum: [normal, caution, manual_review, block, unknown]
+        reason: { type: string }
+        diagnostics:
+          type: array
+          items: { type: string }
+
+    MarketSessionDecisionView:
+      type: object
+      description: >
+        Restrictive session gate decision. size_multiplier is always ≤ 1.0 —
+        market sessions can only reduce size, never boost. RiskGate stays final.
+      required: [action, size_multiplier, reason, evidence, diagnostics]
+      properties:
+        action:
+          type: string
+          enum: [allow, caution, manual_ready, block]
+        size_multiplier: { type: number }
+        reason: { type: string }
+        reason_code: { type: string, nullable: true }
+        evidence:
+          type: array
+          items: { type: string }
+        diagnostics:
+          type: array
+          items: { type: string }
+
+    MarketSessionsCurrentResponse:
+      type: object
+      required: [generated_at, markets, diagnostics, paper_safe, no_execution]
+      properties:
+        generated_at: { type: string, format: date-time }
+        markets:
+          type: array
+          items: { $ref: "#/components/schemas/MarketSessionStatusView" }
+        diagnostics:
+          type: array
+          items: { type: string }
+        paper_safe: { type: boolean }
+        no_execution: { type: boolean }
+
+    MarketSessionAssetResponse:
+      type: object
+      required:
+        [generated_at, asset_code, asset_context, decision, diagnostics,
+         paper_safe, no_execution]
+      properties:
+        generated_at: { type: string, format: date-time }
+        asset_code: { type: string }
+        asset_context: { $ref: "#/components/schemas/AssetSessionContextView" }
+        decision: { $ref: "#/components/schemas/MarketSessionDecisionView" }
+        diagnostics:
+          type: array
+          items: { type: string }
+        paper_safe: { type: boolean }
+        no_execution: { type: boolean }
+
+    # ── F1 — Multi-timeframe Fibonacci (technical evidence; backend-computed) ──
+    FibonacciLevel:
+      type: object
+      required: [ratio, label, price, kind]
+      properties:
+        ratio: { type: number }
+        label: { type: string }
+        price: { type: number }
+        kind: { type: string, enum: [retracement, extension] }
+        role: { type: string, enum: [support, resistance, neutral, unknown] }
+        distance_pct: { type: number, nullable: true }
+
+    FibonacciAnalysis:
+      type: object
+      description: >
+        One timeframe's Fibonacci context (1D = HTF swing; 4H = retest). Computed
+        from real OHLCV by the backend — the frontend renders, never calculates.
+      required: [timeframe, trend_direction, levels, zone, validity, diagnostics]
+      properties:
+        timeframe: { type: string, enum: ["1D", "4H"] }
+        swing_high: { type: number, nullable: true }
+        swing_low: { type: number, nullable: true }
+        swing_start: { type: string, format: date-time, nullable: true }
+        swing_end: { type: string, format: date-time, nullable: true }
+        trend_direction: { type: string, enum: [uptrend, downtrend, range, unknown] }
+        levels:
+          type: array
+          items: { $ref: "#/components/schemas/FibonacciLevel" }
+        nearest_level:
+          anyOf:
+            - $ref: "#/components/schemas/FibonacciLevel"
+            - type: "null"
+        nearest_distance_pct: { type: number, nullable: true }
+        zone:
+          type: string
+          enum: [near_support, near_resistance, breakout, breakdown, mid_range, unknown]
+        validity: { type: string, enum: [sane, weak, unavailable] }
+        diagnostics:
+          type: array
+          items: { type: string }
+
+    FibonacciConfluence:
+      type: object
+      required: [has_confluence, confluence_zone, score, reason, diagnostics]
+      properties:
+        has_confluence: { type: boolean }
+        confluence_zone: { type: string, enum: [support, resistance, mixed, none, unknown] }
+        nearest_1d_level:
+          anyOf:
+            - $ref: "#/components/schemas/FibonacciLevel"
+            - type: "null"
+        nearest_4h_level:
+          anyOf:
+            - $ref: "#/components/schemas/FibonacciLevel"
+            - type: "null"
+        distance_between_levels_pct: { type: number, nullable: true }
+        score:
+          type: integer
+          description: 0–25 confluence sub-score (evidence only; never opens trades).
+        reason: { type: string }
+        diagnostics:
+          type: array
+          items: { type: string }
+
+    TechnicalInsight:
+      type: object
+      description: >
+        Per-symbol technical evidence aggregate carrying the Fibonacci layer. It
+        does NOT alter the per-TF TechnicalSnapshot score (technical_score) and is
+        not consumed by the decision engine / RiskGate.
+      required: [symbol, fibonacci_score]
+      properties:
+        symbol: { type: string }
+        fib_1d:
+          anyOf:
+            - $ref: "#/components/schemas/FibonacciAnalysis"
+            - type: "null"
+        fib_4h:
+          anyOf:
+            - $ref: "#/components/schemas/FibonacciAnalysis"
+            - type: "null"
+        fib_confluence:
+          anyOf:
+            - $ref: "#/components/schemas/FibonacciConfluence"
+            - type: "null"
+        fibonacci_score:
+          type: integer
+          description: 0–25 Fibonacci evidence score (separate from technical_score).
+
+    # ── T-MTF — Per-timeframe technical result (multi-TF feature; backend-computed) ──
+    # EVIDENCE only: never opens trades, never a single aggregated score
+    # (direction/strength stay separate). The frontend renders, never calculates.
+    IndicatorQualityReport:
+      type: object
+      description: Per-indicator warm-up status (INSUFFICIENT_HISTORY is a diagnostic, never a fake value).
+      properties:
+        rsi: { type: string, enum: [OK, INSUFFICIENT_HISTORY] }
+        macd: { type: string, enum: [OK, INSUFFICIENT_HISTORY] }
+        ema200: { type: string, enum: [OK, INSUFFICIENT_HISTORY] }
+        atr: { type: string, enum: [OK, INSUFFICIENT_HISTORY] }
+        adx: { type: string, enum: [OK, INSUFFICIENT_HISTORY] }
+
+    TechnicalDataQuality:
+      type: object
+      properties:
+        status: { type: string, enum: [OK, DEGRADED] }
+        bars_used: { type: integer }
+        stale: { type: boolean }
+        indicator_quality: { $ref: "#/components/schemas/IndicatorQualityReport" }
+        warnings:
+          type: array
+          items: { type: string }
+
+    TechnicalScoreOverview:
+      type: object
+      description: >
+        Two SEPARATE axes (architecture rule). null = insufficient data — never a
+        neutral 50 (DATA_POLICY).
+      properties:
+        direction_score: { type: number, nullable: true }
+        strength_score: { type: number, nullable: true }
+
+    TechnicalKeyLevels:
+      type: object
+      properties:
+        support: { type: number, nullable: true }
+        resistance: { type: number, nullable: true }
+        atr: { type: number, nullable: true }
+        atr_percent: { type: number, nullable: true }
+        stop_reference: { type: number, nullable: true }
+        target_reference: { type: number, nullable: true }
+
+    TechnicalTrendStrength:
+      type: object
+      description: ADX-band trend reality (NOT direction); adx < adx_trend_min → weak trend.
+      properties:
+        adx: { type: number, nullable: true }
+        plus_di: { type: number, nullable: true }
+        minus_di: { type: number, nullable: true }
+        is_trending: { type: boolean }
+        label: { type: string, enum: [TRENDING, WEAK, UNKNOWN] }
+
+    TechnicalConfluenceZone:
+      type: object
+      required: [price, kind]
+      properties:
+        price: { type: number }
+        kind: { type: string, enum: [support, resistance] }
+        components:
+          type: array
+          items: { type: string }
+
+    ConfirmationSignal:
+      type: object
+      description: A TIMING gate (fired/not) — separate from scoring (no double count).
+      required: [name]
+      properties:
+        name: { type: string }
+        fired: { type: boolean }
+        detail: { type: string }
+
+    TechnicalTimeframeSummary:
+      type: object
+      properties:
+        bias: { type: string, enum: [BULLISH, BEARISH, NEUTRAL] }
+        evidence:
+          type: array
+          items: { type: string }
+        warnings:
+          type: array
+          items: { type: string }
+
+    ReversalSignal:
+      type: object
+      required: [type, detected]
+      properties:
+        type:
+          type: string
+          enum:
+            - rsi_bullish_divergence
+            - rsi_bearish_divergence
+            - macd_bullish_divergence
+            - macd_bearish_divergence
+            - double_bottom
+            - double_top
+        detected: { type: boolean }
+        detail: { type: string }
+
+    TechnicalReversalSignals:
+      type: object
+      description: >
+        Reversal cues (momentum divergence + double formations) read from real closed
+        bars; bias is the net direction (NEUTRAL when none/conflicting). EVIDENCE only.
+      properties:
+        signals:
+          type: array
+          items: { $ref: "#/components/schemas/ReversalSignal" }
+        bias: { type: string, enum: [BULLISH, BEARISH, NEUTRAL] }
+
+    ChartPattern:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string, enum: [uptrend_structure, downtrend_structure, ranging] }
+        detail: { type: string }
+
+    TechnicalChartPatterns:
+      type: object
+      description: Swing-structure read (HH/HL vs LH/LL) from real closed bars — EVIDENCE only.
+      properties:
+        active_patterns:
+          type: array
+          items: { $ref: "#/components/schemas/ChartPattern" }
+        bias: { type: string, enum: [BULLISH, BEARISH, NEUTRAL] }
+
+    TechnicalTimeframeResult:
+      type: object
+      description: >
+        Canonical per-(symbol, timeframe) technical result (one structured opinion
+        per closed-candle timeframe). EVIDENCE only — never opens trades, never a
+        single aggregated score. Backend computes from real closed OHLCV.
+      required: [symbol, timeframe]
+      properties:
+        symbol: { type: string }
+        timeframe: { type: string, enum: ["15m", "1h", "4h", "1d", "1w"] }
+        data_quality: { $ref: "#/components/schemas/TechnicalDataQuality" }
+        score_overview: { $ref: "#/components/schemas/TechnicalScoreOverview" }
+        key_levels: { $ref: "#/components/schemas/TechnicalKeyLevels" }
+        confirmation_signals:
+          type: array
+          items: { $ref: "#/components/schemas/ConfirmationSignal" }
+        trend_strength: { $ref: "#/components/schemas/TechnicalTrendStrength" }
+        volatility_regime:
+          type: string
+          enum: [TRENDING, RANGING, SQUEEZE, EXPANSION, UNKNOWN]
+        confluence_zones:
+          type: array
+          items: { $ref: "#/components/schemas/TechnicalConfluenceZone" }
+        timeframe_summary: { $ref: "#/components/schemas/TechnicalTimeframeSummary" }
+        fibonacci_analysis:
+          anyOf:
+            - $ref: "#/components/schemas/FibonacciAnalysis"
+            - type: "null"
+        reversal_signals:
+          anyOf:
+            - $ref: "#/components/schemas/TechnicalReversalSignals"
+            - type: "null"
+        chart_pattern_analysis:
+          anyOf:
+            - $ref: "#/components/schemas/TechnicalChartPatterns"
+            - type: "null"
+        status: { type: string, enum: [OK, DEGRADED] }
+        source: { type: string }
+        ts: { type: string, format: date-time }
+
+    # ── T2 — TechnicalAgent output (one structured opinion per symbol) ─────────
+    TechnicalInvalidation:
+      type: object
+      properties:
+        timeframe: { type: string, enum: ["15m", "1h", "4h", "1d", "1w"], nullable: true }
+        price: { type: number, nullable: true }
+        reason: { type: string }
+
+    TechnicalAgentOutput:
+      type: object
+      description: >
+        One structured TechnicalAgent opinion per symbol. EVIDENCE only — never
+        opens trades, never sizes; per_timeframe detail stays authoritative and
+        consensus does the strategy-specific combination.
+      required: [agent, symbol]
+      properties:
+        agent: { type: string, enum: [technical] }
+        symbol: { type: string }
+        per_timeframe:
+          type: object
+          additionalProperties: { $ref: "#/components/schemas/TechnicalTimeframeResult" }
+        stance: { type: string, enum: [ALLOW, CAUTION, ABSTAIN, DEGRADED] }
+        direction_score: { type: number, nullable: true }
+        strength_score: { type: number, nullable: true }
+        used_observations:
+          type: array
+          items: { type: string }
+        invalidation:
+          anyOf:
+            - $ref: "#/components/schemas/TechnicalInvalidation"
+            - type: "null"
+        missing_data:
+          type: array
+          items: { type: string }
+        ts: { type: string, format: date-time }
+
+    # ── T2 — Cross-timeframe consensus snapshot (TF + agent aggregation) ───────
+    # SEPARATE axes (direction/strength/agreement/alignment) — never one collapsed
+    # score for all strategies. NEUTRAL dilutes alignment; countertrend conditional.
+    CrossTimeframeConfluenceZone:
+      type: object
+      required: [price, kind]
+      properties:
+        price: { type: number }
+        kind: { type: string, enum: [support, resistance] }
+        timeframes:
+          type: array
+          items: { type: string }
+        components:
+          type: array
+          items: { type: string }
+
+    ConsensusSnapshot:
+      type: object
+      required: [asset]
+      properties:
+        asset: { type: string }
+        per_timeframe_bias:
+          type: object
+          additionalProperties: { type: string, enum: [BULLISH, BEARISH, NEUTRAL] }
+        alignment_status: { type: string, enum: [ALIGNED, PARTIAL, COUNTERTREND, CONFLICTED] }
+        alignment_score: { type: number }
+        cross_timeframe_confluence:
+          type: array
+          items: { $ref: "#/components/schemas/CrossTimeframeConfluenceZone" }
+        direction_score: { type: number, nullable: true }
+        strength_score: { type: number, nullable: true }
+        agreement_score: { type: number }
+        is_countertrend: { type: boolean }
+        confirmed_count: { type: integer }
+        pending_count: { type: integer }
+        blocking_count: { type: integer }
+        evidence:
+          type: array
+          items: { type: string }
+        ts: { type: string, format: date-time }
+
+    # ── T2 — AgentDecision (deterministic action; RiskGate stays final) ───────
+    AgentDecision:
+      type: object
+      description: >
+        Deterministic high-level decision bridging consensus evidence to one action
+        + entry timeframe. Never opens trades; risk_gate_required is always true;
+        upper TF only scales down (size_multiplier ≤ 1.0); 1w yields bias only.
+      required: [asset, action]
+      properties:
+        asset: { type: string }
+        action:
+          type: string
+          enum: [NO_TRADE, WATCH, SCOUT_ALLOWED, CONFIRMATION_REQUIRED, RISK_REDUCE, KILL_SWITCH]
+        entry_timeframe: { type: string, enum: ["15m", "1h", "4h", "1d", "1w"], nullable: true }
+        size_multiplier: { type: number }
+        confidence: { type: number }
+        reason: { type: string }
+        supporting_agents:
+          type: array
+          items: { type: string }
+        blocking_agents:
+          type: array
+          items: { type: string }
+        required_confirmations:
+          type: array
+          items: { type: string }
+        manual_ready_required: { type: boolean }
+        risk_gate_required: { type: boolean }
+        ts: { type: string, format: date-time }
+
+    # ── T2 step 6 — per-trade cost + R:R gate output (RiskGate-side overlay) ──
+    TradeEconomics:
+      type: object
+      description: >
+        Per-trade economics gate result (cost + risk:reward). Only ever restrictive:
+        allow is true only when rr ≥ min_rr AND net_edge_bps ≥ min_net_edge_bps.
+      required: [allow, reason]
+      properties:
+        allow: { type: boolean }
+        reason:
+          type: string
+          enum: [ok, bad_rr, below_cost, insufficient_levels, invalid_entry, invalid_stop]
+        rr: { type: number, nullable: true }
+        reward_bps: { type: number, nullable: true }
+        risk_bps: { type: number, nullable: true }
+        cost_bps: { type: number }
+        net_edge_bps: { type: number, nullable: true }
+        evidence:
+          type: array
+          items: { type: string }
+
+    # ── T2 step 7 — composed per-symbol agent pipeline row ────────────────────
+    AgentMatrixRow:
+      type: object
+      required: [symbol, stance, consensus, decision]
+      properties:
+        symbol: { type: string }
+        stance: { type: string, enum: [ALLOW, CAUTION, ABSTAIN, DEGRADED] }
+        consensus: { $ref: "#/components/schemas/ConsensusSnapshot" }
+        decision: { $ref: "#/components/schemas/AgentDecision" }
+        economics:
+          anyOf:
+            - $ref: "#/components/schemas/TradeEconomics"
+            - type: "null"
+        reversal_bias: { type: string, enum: [BULLISH, BEARISH, NEUTRAL], nullable: true }
+        pattern: { type: string, nullable: true }
+
+    AgentMatrix:
+      type: object
+      description: >
+        Read-only multi-TF agent pipeline matrix (steps 1–6). Global RiskGate action
+        is applied first; the per-trade cost + R:R gate is final. Frontend renders only.
+      required: [timeframes, symbols]
+      properties:
+        risk_action: { type: string, nullable: true }
+        timeframes:
+          type: array
+          items: { type: string, enum: ["15m", "1h", "4h", "1d", "1w"] }
+        symbols:
+          type: array
+          items: { $ref: "#/components/schemas/AgentMatrixRow" }
+
+    ShadowTfCalibration:
+      type: object
+      required: [timeframe, strategy, trades, win_rate, trust]
+      properties:
+        timeframe: { type: string }
+        strategy: { type: string }
+        trades: { type: integer }
+        win_rate: { type: number }
+        trust: { type: string, enum: [PRIOR, CALIBRATED] }
+
+    ShadowCalibration:
+      type: object
+      description: tf_weights trust verdict — PRIOR/untrusted until per-TF calibration validates.
+      required: [tf_weights_trusted, calibrated_timeframes, per_timeframe]
+      properties:
+        tf_weights_trusted: { type: boolean }
+        calibrated_timeframes:
+          type: array
+          items: { type: string }
+        min_trades_per_tf: { type: integer, nullable: true }
+        per_timeframe:
+          type: array
+          items: { $ref: "#/components/schemas/ShadowTfCalibration" }
+
+    ShadowAgreementSummary:
+      type: object
+      description: Per-tick counts of how live and shadow intents agreed (observation only).
+      required: [agree_entry, agree_flat, disagree_direction, live_only_entry, shadow_only_entry]
+      properties:
+        agree_entry: { type: integer }
+        agree_flat: { type: integer }
+        disagree_direction: { type: integer }
+        live_only_entry: { type: integer }
+        shadow_only_entry: { type: integer }
+
+    ShadowRow:
+      type: object
+      required: [symbol, agreement, live_wants_entry, shadow_wants_entry]
+      properties:
+        symbol: { type: string }
+        agreement:
+          type: string
+          enum: [AGREE_ENTRY, AGREE_FLAT, DISAGREE_DIRECTION, LIVE_ONLY_ENTRY, SHADOW_ONLY_ENTRY]
+        live_wants_entry: { type: boolean }
+        live_action: { type: string, nullable: true }
+        live_direction: { type: string, nullable: true }
+        live_timeframe: { type: string, nullable: true }
+        shadow_wants_entry: { type: boolean }
+        shadow_action: { type: string, nullable: true }
+        shadow_direction: { type: string, nullable: true }
+        shadow_entry_timeframe: { type: string, nullable: true }
+        shadow_stance: { type: string, nullable: true }
+
+    ShadowComparison:
+      type: object
+      description: >
+        Step 9 controlled activation (observation mode). Latest comparison of the live
+        decide_matrix engine vs the NEW agent pipeline running in shadow. affected_paper
+        is always false in Phase A — the shadow never moves paper; this is read-only.
+      required: [available, affect_decision, affected_paper, summary, calibration, rows]
+      properties:
+        available: { type: boolean }
+        recorded_at: { type: string, nullable: true }
+        snapshot_id: { type: string, nullable: true }
+        risk_action: { type: string, nullable: true }
+        affect_decision: { type: boolean }
+        affected_paper: { type: boolean }
+        summary: { $ref: "#/components/schemas/ShadowAgreementSummary" }
+        calibration: { $ref: "#/components/schemas/ShadowCalibration" }
+        rows:
+          type: array
+          items: { $ref: "#/components/schemas/ShadowRow" }

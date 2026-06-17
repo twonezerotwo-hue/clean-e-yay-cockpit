@@ -17,10 +17,11 @@ Set the backend URL in `.env.local`:
 NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:9000
 ```
 
-The Layer 1 cockpit route is available at:
+Layer 1 is the default route. The legacy detail dashboard is Layer 2:
 
 ```txt
-http://localhost:3000/cockpit
+http://localhost:3000/
+http://localhost:3000/dashboard
 ```
 
 ## Contract Boundary

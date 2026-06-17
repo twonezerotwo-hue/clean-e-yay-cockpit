@@ -1,20 +1,31 @@
 "use client";
 
 /**
- * News Map Radar Layer — Clean E-yAy port.
+ * FAZ 15 — News Map Radar Layer v3.
  *
- * Veri kaynağı: parent'tan gelen `headlines` prop (NewsPanel).
- * Liste ve radar AYNI veri setini kullanır — ayrı fetch yok.
+ * Veri kaynağı: parent'tan gelen `headlines` prop (NewsPanelShell).
+ * Liste ve Radar aynı veri setini kullanır — ayrı fetch yok.
  *
- * Döngü: her haber 10sn featured → seri bitince 10sn all-pulse → başa.
+ * Döngü: her haber 10 sn featured → seri bitince 10 sn all-pulse → başa.
  * Aktif nokta yanında floating ticker (bölge · kaynak · başlık).
- * Karar ÜRETMEZ. PAPER_SAFE — sadece görselleştirme.
+ * Karar üretmez. PAPER_SAFE. Fail/degraded → onDegraded → Shell listeye döner.
  */
 import { useEffect, useState } from "react";
 
-import { classifyHeadlineRegion, geoForRegion, type GeoPoint } from "@/lib/news-region-map";
+import {
+  classifyHeadlineRegion,
+  geoForRegion,
+  type GeoPoint,
+} from "@/lib/news-region-map";
 import { WORLD_LAND_PATHS } from "@/lib/world-map-path";
 import type { NewsHeadline } from "@/types/generated/api";
+
+// Backend henüz NewsHeadline.url alanı dönmüyorsa Google News fallback.
+function urlForHeadline(h: NewsHeadline): string {
+  const raw = (h as unknown as { url?: string }).url;
+  if (raw && /^https?:\/\//.test(raw)) return raw;
+  return `https://news.google.com/search?q=${encodeURIComponent(h.title)}`;
+}
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -29,33 +40,32 @@ interface EnrichedNode {
   age_min:  number | null;
   assets:   { asset: string; up: boolean; note: string }[];
   geo:      GeoPoint;
-  actor:    { name: string; short: string } | null;
+  actor:    { name: string; short: string; img?: string } | null;
   url:      string;
 }
 
-// Backend henüz NewsHeadline.url alanı dönmüyor; varsa kullanılır, yoksa
-// Google News arama URL'sine düşülür (yeni sekme).
-function urlForHeadline(h: NewsHeadline): string {
-  const raw = (h as unknown as { url?: string }).url;
-  if (raw && /^https?:\/\//.test(raw)) return raw;
-  return `https://news.google.com/search?q=${encodeURIComponent(h.title)}`;
-}
-
+// Tanıdık aktör tespiti — headline metninden deterministik; fotoğraf uydurmaz.
 const KNOWN_ACTORS: { re: RegExp; name: string; short: string }[] = [
-  { re: /\btrump\b/i,                       name: "Trump",     short: "DT" },
-  { re: /\bpowell\b/i,                      name: "Powell",    short: "JP" },
-  { re: /\bfed\b|federal reserve|fomc/i,    name: "Fed",       short: "FED" },
-  { re: /\becb\b|avrupa merkez|lagarde/i,   name: "ECB",       short: "ECB" },
-  { re: /\bopec\b/i,                        name: "OPEC",      short: "OPC" },
-  { re: /\bputin\b/i,                       name: "Putin",     short: "VP" },
-  { re: /\bxi\b|jinping/i,                  name: "Xi",        short: "XI" },
-  { re: /\bboj\b|bank of japan|ueda/i,      name: "BoJ",       short: "BOJ" },
-  { re: /\bbiden\b/i,                       name: "Biden",     short: "JB" },
+  { re: /\btrump\b/i,                       name: "Trump",   short: "DT" },
+  { re: /\bpowell\b/i,                      name: "Powell",  short: "JP" },
+  { re: /\bfed\b|federal reserve|fomc/i,    name: "Fed",     short: "FED" },
+  { re: /\becb\b|avrupa merkez|lagarde/i,   name: "ECB",     short: "ECB" },
+  { re: /\bopec\b/i,                        name: "OPEC",    short: "OPC" },
+  { re: /\bputin\b/i,                       name: "Putin",   short: "VP" },
+  { re: /\bxi\b|jinping/i,                  name: "Xi",      short: "XI" },
+  { re: /\bboj\b|bank of japan|ueda/i,      name: "BoJ",     short: "BOJ" },
+  { re: /\bbiden\b/i,                       name: "Biden",   short: "JB" },
   { re: /\bnetanyahu\b/i,                   name: "Netanyahu", short: "BN" },
-  { re: /\berdoğan\b|\berdogan\b/i,         name: "Erdoğan",   short: "RTE" },
+  { re: /\berdoğan\b|\berdogan\b/i,         name: "Erdoğan", short: "RTE" },
 ];
 
-function detectActor(text: string): EnrichedNode["actor"] {
+function detectActor(h: NewsHeadline, text: string): EnrichedNode["actor"] {
+  // Veride güvenli speaker/author/thumbnail alanı varsa onu kullan
+  const x = h as NewsHeadline & { speaker?: string; author?: string; thumbnail?: string };
+  const explicit = x.speaker || x.author;
+  if (explicit) {
+    return { name: explicit, short: explicit.slice(0, 3).toUpperCase(), img: x.thumbnail };
+  }
   for (const a of KNOWN_ACTORS) if (a.re.test(text)) return { name: a.name, short: a.short };
   return null;
 }
@@ -66,10 +76,11 @@ type CyclePhase =
 
 const PHASE_MS = 10_000;
 
-// ── Adapter (Clean NewsHeadline → EnrichedNode) ───────────────────────────────
+// ── Conversion helpers ────────────────────────────────────────────────────────
 
+// Backend NewsHeadline modeli: freshness (FRESH/RECENT/STALE), region (kaba),
+// asset_impact: Record<symbol, dir>. Severity türetme burada cockpit'e özel.
 const GEO_REGIONS = new Set(["Iran", "Israel", "Russia", "China", "Middle East"]);
-
 function deriveSeverity(h: NewsHeadline): Severity {
   const fresh = h.freshness === "FRESH";
   const hasImpact = !!h.asset_impact && Object.keys(h.asset_impact).length > 0;
@@ -91,28 +102,9 @@ function adaptImpact(impact: Record<string, number> | undefined) {
   if (!impact) return [];
   return Object.entries(impact).map(([asset, dir]) => ({
     asset,
-    up:   dir < 0,                             // negative sentiment → risk-on (red)
+    up:   dir < 0,                              // negative sentiment → risk-on
     note: dir > 0 ? "risk yukarı" : dir < 0 ? "baskı" : "nötr",
   }));
-}
-
-function enrichHeadlines(headlines: NewsHeadline[]): EnrichedNode[] {
-  return headlines.slice(0, 8).map((h, i) => {
-    const text = (h.title_tr?.trim()) || h.title;
-    const assets = adaptImpact(h.asset_impact);
-    return {
-      id:       `n${i}-${h.id}`,
-      headline: text,
-      source:   h.source,
-      severity: deriveSeverity(h),
-      category: assets[0]?.asset.toLowerCase() ?? "news",
-      age_min:  toAgeMin(h.ts),
-      assets,
-      geo:      geoForRegion(classifyHeadlineRegion(text, h.region)),
-      actor:    detectActor(text),
-      url:      urlForHeadline(h),
-    };
-  });
 }
 
 function deriveRisk(nodes: EnrichedNode[]): string {
@@ -122,6 +114,27 @@ function deriveRisk(nodes: EnrichedNode[]): string {
   return "low";
 }
 
+function enrichHeadlines(headlines: NewsHeadline[]): EnrichedNode[] {
+  return headlines.slice(0, 8).map((h, i) => {
+    const text = (h.title_tr?.trim()) || h.title;
+    const assets = adaptImpact(h.asset_impact);
+    const cat = assets[0]?.asset.toLowerCase() ?? "news";
+    return {
+      id:       `n${i}-${h.id}`,
+      headline: text,
+      source:   h.source,
+      severity: deriveSeverity(h),
+      category: cat,
+      age_min:  toAgeMin(h.ts),
+      assets,
+      geo:      geoForRegion(classifyHeadlineRegion(text, h.region)),
+      actor:    detectActor(h, text),
+      url:      urlForHeadline(h),
+    };
+  });
+}
+
+// Haber başına süre: headline okunmadan geçilmez (uzunluğa göre 9–20sn)
 function durForNode(n: EnrichedNode | null): number {
   if (!n) return PHASE_MS;
   return Math.min(20_000, Math.max(9_000, 4_000 + n.headline.length * 85));
@@ -143,22 +156,32 @@ const RISK_BADGE: Record<string, string> = {
   low:      "bg-cyan-950/40 border-cyan-600/40 text-cyan-200",
 };
 
-// ── World map sub-component ───────────────────────────────────────────────────
+// ── World map (local/static, equirectangular 1000×500) ───────────────────────
+// x=(lon+180)/360*1000, y=(90-lat)/180*500 — gerçek kıyı koordinatlarından
+// sadeleştirilmiş low-poly path'ler; runtime fetch yok.
+
+const LANDMASS: string[] = WORLD_LAND_PATHS;
+
+// ── Sub-components ────────────────────────────────────────────────────────────
 
 function WorldMap({
   nodes, phase, animate, activeNode, activeSv, fill = false, durationMs = PHASE_MS,
 }: {
-  nodes:      EnrichedNode[];
-  phase:      CyclePhase;
-  animate:    boolean;
+  nodes:     EnrichedNode[];
+  phase:     CyclePhase;
+  animate:   boolean;
   activeNode: EnrichedNode | null;
-  activeSv:   typeof SEV["low"] | null;
-  fill?:      boolean;
+  activeSv:  typeof SEV["low"] | null;
+  /** true → modülün tamamını kaplayan arka plan modu */
+  fill?:     boolean;
+  /** Aktif haberin toplam süresi — zoom/marquee bununla senkron */
   durationMs?: number;
 }) {
   const allPulse  = phase.mode === "all_pulse";
   const activeIdx = phase.mode === "sequence" ? phase.idx : -1;
 
+  // Zoom haber süresiyle senkron: haber başında zoom-in, headline bitene
+  // kadar bölgede kal, bitişten ~1.6sn önce zoom-out. Reduced-motion → zoom yok.
   const [zoomed, setZoomed] = useState(false);
   const activeId = activeNode?.id ?? null;
   useEffect(() => {
@@ -175,6 +198,7 @@ function WorldMap({
     ? `translate(500px,250px) scale(${ZK}) translate(${-zcx}px,${-zcy}px)`
     : "translate(0px,0px) scale(1)";
 
+  // Ticker position: zoom'da merkez; değilse nokta yanı (kenarlarda taraf değiştir)
   const tickerAnchorLeft = activeNode ? activeNode.geo.x > 620 : false;
   const tickerAnchorLow  = activeNode ? activeNode.geo.y < 130 : false;
   const tickerTransformX = zoomed ? "-50%" : tickerAnchorLeft ? "calc(-100% - 14px)" : "14px";
@@ -185,6 +209,7 @@ function WorldMap({
   return (
     <div className={fill ? "absolute inset-0 w-full h-full" : "relative w-full"}
          style={fill ? undefined : { paddingBottom: "50%" }}>
+      {/* Radar sweep HTML overlay */}
       {animate && (
         <div
           className="absolute top-0 bottom-0 pointer-events-none z-10"
@@ -196,6 +221,7 @@ function WorldMap({
         />
       )}
 
+      {/* Floating headline ticker */}
       {!allPulse && activeNode && activeSv && (
         <div
           className="absolute pointer-events-none z-20"
@@ -210,17 +236,23 @@ function WorldMap({
           key={activeNode.id}
         >
           <div className="flex items-end gap-2">
+            {/* Speaker/aktör avatar bubble — sadece tespit edilen aktörde */}
             {activeNode.actor && (
               <div className="flex flex-col items-center shrink-0 pb-0.5">
                 <span
                   className="flex h-9 w-9 items-center justify-center rounded-full border-2 overflow-hidden font-mono font-black text-[10px] text-white"
                   style={{
                     borderColor: activeSv.dot,
-                    background:  `radial-gradient(circle at 35% 30%, ${activeSv.dot}55, rgba(2,10,22,0.95))`,
-                    boxShadow:   `0 0 12px ${activeSv.dot}55`,
+                    background: activeNode.actor.img
+                      ? undefined
+                      : `radial-gradient(circle at 35% 30%, ${activeSv.dot}55, rgba(2,10,22,0.95))`,
+                    boxShadow: `0 0 12px ${activeSv.dot}55`,
                   }}
                 >
-                  {activeNode.actor.short}
+                  {activeNode.actor.img
+                    // eslint-disable-next-line @next/next/no-img-element
+                    ? <img src={activeNode.actor.img} alt={activeNode.actor.name} className="h-full w-full object-cover" />
+                    : activeNode.actor.short}
                 </span>
                 <span className="mt-0.5 text-[10px] font-mono leading-none" style={{ color: activeSv.dot }}>
                   {activeNode.actor.name}
@@ -228,6 +260,7 @@ function WorldMap({
               </div>
             )}
 
+            {/* Glass speech-pill */}
             <a
               href={activeNode.url}
               target="_blank"
@@ -235,11 +268,12 @@ function WorldMap({
               title="Habere git"
               className="relative rounded-xl border backdrop-blur-md px-3 py-2 block pointer-events-auto hover:brightness-125 transition-[filter] duration-200"
               style={{
-                background:  "rgba(2,10,22,0.92)",
-                borderColor: activeSv.dot + "66",
-                boxShadow:   `0 0 18px ${activeSv.dot}33, inset 0 1px 0 ${activeSv.dot}33`,
+                background:   "rgba(2,10,22,0.92)",
+                borderColor:  activeSv.dot + "66",
+                boxShadow:    `0 0 18px ${activeSv.dot}33, inset 0 1px 0 ${activeSv.dot}33`,
               }}
             >
+              {/* Speech beam — avatar'dan çıkıyormuş hissi */}
               {activeNode.actor && (
                 <span aria-hidden="true" className="absolute -left-1.5 bottom-3 w-3 h-3 rotate-45 border-l border-b"
                       style={{ background: "rgba(2,10,22,0.92)", borderColor: activeSv.dot + "66" }} />
@@ -253,9 +287,9 @@ function WorldMap({
                 <span
                   className="inline-block text-sm sm:text-base font-semibold whitespace-nowrap"
                   style={{
-                    color:      activeSv.dot,
+                    color:     activeSv.dot,
                     textShadow: `0 0 10px ${activeSv.dot}44`,
-                    animation:  animate && activeNode.headline.length > 36
+                    animation: animate && activeNode.headline.length > 36
                       ? `bnm-ticker ${((durationMs - 1_200) / 1000).toFixed(1)}s ease-in-out infinite`
                       : undefined,
                   }}
@@ -277,35 +311,10 @@ function WorldMap({
         style={animate ? { animation: "bnm-breathe 14s ease-in-out infinite" } : undefined}
       >
         <defs>
-          {/* Ocean: koyu derin merkezden açık kenarlara — gerçek deniz hissi */}
-          <radialGradient id="bnm-ocean" cx="50%" cy="48%" r="72%">
-            <stop offset="0%"   stopColor="#0c2447" />
-            <stop offset="45%"  stopColor="#071735" />
-            <stop offset="80%"  stopColor="#030c1e" />
-            <stop offset="100%" stopColor="#01060f" />
-          </radialGradient>
-          {/* Subtle ocean depth noise — diagonal weave pattern */}
-          <pattern id="bnm-ocean-noise" width="6" height="6" patternUnits="userSpaceOnUse">
-            <rect width="6" height="6" fill="transparent" />
-            <circle cx="3" cy="3" r="0.3" fill="rgba(34,211,238,0.08)" />
-          </pattern>
-          {/* Land: iki tonlu — alttan koyu bezelya, üstten parlatma */}
-          <linearGradient id="bnm-land" x1="0%" y1="0%" x2="0%" y2="100%">
-            <stop offset="0%"  stopColor="#1a4775" />
-            <stop offset="55%" stopColor="#0e2c52" />
-            <stop offset="100%" stopColor="#072042" />
-          </linearGradient>
-          {/* Atmosphere edge vignette */}
-          <radialGradient id="bnm-vignette" cx="50%" cy="50%" r="65%">
-            <stop offset="55%" stopColor="rgba(0,0,0,0)" />
-            <stop offset="90%" stopColor="rgba(0,0,0,0.35)" />
-            <stop offset="100%" stopColor="rgba(2,8,20,0.85)" />
-          </radialGradient>
-          {/* Day-side soft top highlight */}
-          <radialGradient id="bnm-daylight" cx="42%" cy="22%" r="48%">
-            <stop offset="0%"  stopColor="rgba(125,211,252,0.18)" />
-            <stop offset="60%" stopColor="rgba(125,211,252,0.04)" />
-            <stop offset="100%" stopColor="rgba(125,211,252,0)" />
+          <radialGradient id="bnm-bg" cx="50%" cy="46%" r="68%">
+            <stop offset="0%"   stopColor="#0a1c34" />
+            <stop offset="60%"  stopColor="#051226" />
+            <stop offset="100%" stopColor="#020812" />
           </radialGradient>
           <filter id="bnm-landglow" x="-10%" y="-10%" width="120%" height="120%">
             <feGaussianBlur stdDeviation="1.4" result="b" />
@@ -314,173 +323,88 @@ function WorldMap({
               <feMergeNode in="SourceGraphic" />
             </feMerge>
           </filter>
-          {/* Sharp coastline highlight pass */}
-          <filter id="bnm-coast" x="-5%" y="-5%" width="110%" height="110%">
-            <feGaussianBlur stdDeviation="0.4" />
-          </filter>
         </defs>
 
-        {/* Layer 1: deep ocean radial gradient */}
-        <rect width="1000" height="500" fill="url(#bnm-ocean)" />
-        {/* Layer 2: ocean micro-pattern */}
-        <rect width="1000" height="500" fill="url(#bnm-ocean-noise)" opacity="0.45" />
-        {/* Layer 3: day-side soft highlight */}
-        <rect width="1000" height="500" fill="url(#bnm-daylight)" />
+        <rect width="1000" height="500" fill="url(#bnm-bg)" />
 
+        {/* Zoom grubu — aktif haberin bölgesine smooth yakınlaşma */}
         <g style={{
           transform: mapTransform,
           transition: animate ? "transform 1.3s cubic-bezier(.4,0,.2,1)" : undefined,
           transformOrigin: "0 0",
         }}>
 
-          {/* Fine graticule — 5° latitude/longitude */}
-          {Array.from({ length: 35 }, (_, i) => (
-            <line key={`vf${i}`} x1={(i + 1) * (1000 / 36)} y1="0" x2={(i + 1) * (1000 / 36)} y2="500"
-              stroke="#13335c" strokeWidth="0.25" opacity="0.32" />
-          ))}
-          {Array.from({ length: 17 }, (_, i) => (
-            <line key={`hf${i}`} x1="0" y1={(i + 1) * (500 / 18)} x2="1000" y2={(i + 1) * (500 / 18)}
-              stroke="#13335c" strokeWidth="0.25" opacity="0.32" />
-          ))}
-          {/* Coarse graticule — 30° */}
-          {[1, 2, 3, 4, 5].map((i) => (
-            <line key={`vc${i}`} x1={i * (1000 / 6)} y1="0" x2={i * (1000 / 6)} y2="500"
-              stroke="#1b4d82" strokeWidth="0.5" opacity="0.55" />
-          ))}
-          {[1, 2].map((i) => (
-            <line key={`hc${i}`} x1="0" y1={i * (500 / 3)} x2="1000" y2={i * (500 / 3)}
-              stroke="#1b4d82" strokeWidth="0.5" opacity="0.55" />
-          ))}
+        {Array.from({ length: 17 }, (_, i) => (
+          <line key={`v${i}`} x1={(i + 1) * 55.5} y1="0" x2={(i + 1) * 55.5} y2="500"
+            stroke="#13335c" strokeWidth="0.4" opacity="0.5" />
+        ))}
+        {Array.from({ length: 8 }, (_, i) => (
+          <line key={`h${i}`} x1="0" y1={(i + 1) * 55.5} x2="1000" y2={(i + 1) * 55.5}
+            stroke="#13335c" strokeWidth="0.4" opacity="0.5" />
+        ))}
+        <line x1="0" y1="250" x2="1000" y2="250" stroke="#22d3ee" strokeWidth="0.6" opacity="0.18" />
 
-          {/* Tropics + arctic circles + prime meridian + equator */}
-          <line x1="0" y1="250" x2="1000" y2="250" stroke="#22d3ee" strokeWidth="0.8" opacity="0.32" />
-          <line x1="500" y1="0"  x2="500" y2="500" stroke="#22d3ee" strokeWidth="0.6" opacity="0.22" />
-          <line x1="0" y1="186.5" x2="1000" y2="186.5" stroke="#38bdf8" strokeWidth="0.4" opacity="0.22" strokeDasharray="3 4" />
-          <line x1="0" y1="313.5" x2="1000" y2="313.5" stroke="#38bdf8" strokeWidth="0.4" opacity="0.22" strokeDasharray="3 4" />
-          <line x1="0" y1="65"  x2="1000" y2="65"  stroke="#38bdf8" strokeWidth="0.35" opacity="0.18" strokeDasharray="2 6" />
-          <line x1="0" y1="435" x2="1000" y2="435" stroke="#38bdf8" strokeWidth="0.35" opacity="0.18" strokeDasharray="2 6" />
+        <g filter="url(#bnm-landglow)">
+          {LANDMASS.map((d, i) => (
+            <path key={i} d={d}
+              fill="#0e2a4e" stroke="#2563a8" strokeWidth="1"
+              strokeLinejoin="round" opacity="0.92" />
+          ))}
+        </g>
 
-          {/* Land — depth shadow pass (offset 2px down, blurred) */}
-          <g transform="translate(0,2.5)" opacity="0.55" filter="url(#bnm-coast)">
-            {WORLD_LAND_PATHS.map((d, i) => (
-              <path key={`shadow-${i}`} d={d} fill="#01060f" stroke="none" />
-            ))}
-          </g>
-          {/* Land — base fill with vertical gradient (lighter top, darker bottom) */}
-          <g filter="url(#bnm-landglow)">
-            {WORLD_LAND_PATHS.map((d, i) => (
-              <path key={`base-${i}`} d={d}
-                fill="url(#bnm-land)" stroke="#3a7fc4" strokeWidth="1"
-                strokeLinejoin="round" opacity="0.95" />
-            ))}
-          </g>
-          {/* Land — bright coastline inner stroke */}
-          <g opacity="0.65">
-            {WORLD_LAND_PATHS.map((d, i) => (
-              <path key={`coast-${i}`} d={d}
-                fill="none" stroke="#5eb3ee" strokeWidth="0.45"
-                strokeLinejoin="round" />
-            ))}
-          </g>
-          {/* Land — top edge subtle highlight (1px up, blue tint) */}
-          <g transform="translate(0,-0.6)" opacity="0.35">
-            {WORLD_LAND_PATHS.map((d, i) => (
-              <path key={`hl-${i}`} d={d}
-                fill="none" stroke="#a5d8ff" strokeWidth="0.35"
-                strokeLinejoin="round" />
-            ))}
-          </g>
-
-          {allPulse && nodes.length > 1 && (
-            <g opacity="0.35">
-              {nodes.slice(0, -1).map((n, i) => {
-                const next = nodes[i + 1];
-                return (
-                  <line key={`net${i}`}
-                    x1={n.geo.x} y1={n.geo.y} x2={next.geo.x} y2={next.geo.y}
-                    stroke="#22d3ee" strokeWidth="0.8" strokeDasharray="3 5"
-                    style={animate ? { animation: "bnm-dash 2.4s linear infinite" } : undefined}
-                  />
-                );
-              })}
-            </g>
-          )}
-
-          {nodes.map((node, i) => {
-            const { x, y, region } = node.geo;
-            const sv       = SEV[node.severity] ?? SEV.low;
-            const isActive = allPulse || i === activeIdx;
-            const strong   = !allPulse && i === activeIdx;
-            return (
-              <g key={node.id} transform={`translate(${x},${y})`}
-                 style={{ transition: "opacity 0.6s ease" }} opacity={isActive ? 1 : 0.45}>
-                {animate && isActive && (
-                  <circle r={strong ? 26 : 18} fill="none" stroke={sv.dot} strokeWidth="1"
-                    opacity="0.30"
-                    style={{ animation: `bnm-pulse ${allPulse ? "1.6s" : "2s"} ease-in-out infinite` }}
-                  />
-                )}
-                {animate && strong && (
-                  <circle r="15" fill="none" stroke={sv.dot} strokeWidth="0.8" opacity="0.45"
-                    style={{ animation: "bnm-pulse 2s ease-in-out infinite", animationDelay: "0.6s" }}
-                  />
-                )}
-                <circle r={strong ? 9 : 5.5} fill="none" stroke={sv.dot}
-                  strokeWidth={strong ? 1.5 : 1} opacity="0.8" />
-                <circle r={strong ? 5 : 3} fill={sv.dot}
-                  style={{ filter: `drop-shadow(0 0 ${strong ? 10 : 5}px ${sv.dot})` }}
+        {allPulse && nodes.length > 1 && (
+          <g opacity="0.35">
+            {nodes.slice(0, -1).map((n, i) => {
+              const next = nodes[i + 1];
+              return (
+                <line key={`net${i}`}
+                  x1={n.geo.x} y1={n.geo.y} x2={next.geo.x} y2={next.geo.y}
+                  stroke="#22d3ee" strokeWidth="0.8" strokeDasharray="3 5"
+                  style={animate ? { animation: "bnm-dash 2.4s linear infinite" } : undefined}
                 />
-                {!strong && isActive && (
-                  <text x="0" y="-11" textAnchor="middle" fontSize="7"
-                    fill="#94a3b8" fontFamily="monospace" opacity="0.55">
-                    {region.toUpperCase()}
-                  </text>
-                )}
-              </g>
-            );
-          })}
+              );
+            })}
+          </g>
+        )}
+
+        {nodes.map((node, i) => {
+          const { x, y, region } = node.geo;
+          const sv       = SEV[node.severity] ?? SEV.low;
+          const isActive = allPulse || i === activeIdx;
+          const strong   = !allPulse && i === activeIdx;
+          return (
+            <g key={node.id} transform={`translate(${x},${y})`}
+               style={{ transition: "opacity 0.6s ease" }} opacity={isActive ? 1 : 0.45}>
+              {animate && isActive && (
+                <circle r={strong ? 26 : 18} fill="none" stroke={sv.dot} strokeWidth="1"
+                  opacity="0.30"
+                  style={{ animation: `bnm-pulse ${allPulse ? "1.6s" : "2s"} ease-in-out infinite` }}
+                />
+              )}
+              {animate && strong && (
+                <circle r="15" fill="none" stroke={sv.dot} strokeWidth="0.8" opacity="0.45"
+                  style={{ animation: "bnm-pulse 2s ease-in-out infinite", animationDelay: "0.6s" }}
+                />
+              )}
+              <circle r={strong ? 9 : 5.5} fill="none" stroke={sv.dot}
+                strokeWidth={strong ? 1.5 : 1} opacity="0.8" />
+              <circle r={strong ? 5 : 3} fill={sv.dot}
+                style={{ filter: `drop-shadow(0 0 ${strong ? 10 : 5}px ${sv.dot})` }}
+              />
+              {/* Region label (small, above dot — visible when NOT the active node) */}
+              {!strong && isActive && (
+                <text x="0" y="-11" textAnchor="middle" fontSize="7"
+                  fill="#94a3b8" fontFamily="monospace" opacity="0.55">
+                  {region.toUpperCase()}
+                </text>
+              )}
+            </g>
+          );
+        })}
 
         </g>
 
-        {/* Atmosphere vignette — kenarlardan koyu fade */}
-        <rect width="1000" height="500" fill="url(#bnm-vignette)" pointerEvents="none" />
-
-        {/* Hairline cyan border */}
-        <rect width="1000" height="500" fill="none" stroke="#22d3ee" strokeWidth="1" opacity="0.18" />
-
-        {/* Coordinate hint labels — köşelerde N/S/E/W */}
-        <g fill="rgba(125,211,252,0.55)" fontFamily="ui-monospace, monospace" fontSize="8">
-          <text x="500" y="11" textAnchor="middle">90°N</text>
-          <text x="500" y="494" textAnchor="middle">90°S</text>
-          <text x="6"   y="253" textAnchor="start">180°W</text>
-          <text x="994" y="253" textAnchor="end">180°E</text>
-          <text x="498" y="246" textAnchor="end">0°</text>
-        </g>
-
-        {/* Compass rose — sağ üst */}
-        <g transform="translate(948 38)" opacity="0.7">
-          <circle r="14" fill="rgba(2,8,20,0.6)" stroke="rgba(125,211,252,0.45)" strokeWidth="0.6" />
-          <line x1="0" y1="-12" x2="0" y2="-3" stroke="#22d3ee" strokeWidth="1" />
-          <line x1="0" y1="3"  x2="0" y2="12"  stroke="#3a7fc4" strokeWidth="0.6" />
-          <line x1="-12" y1="0" x2="-3" y2="0" stroke="#3a7fc4" strokeWidth="0.6" />
-          <line x1="3"  y1="0" x2="12"  y2="0" stroke="#3a7fc4" strokeWidth="0.6" />
-          <text x="0" y="-15" textAnchor="middle" fontFamily="ui-monospace, monospace" fontSize="7"
-                fill="#22d3ee">N</text>
-        </g>
-
-        {/* Scale bar — sol alt */}
-        <g transform="translate(20 478)" opacity="0.65">
-          <line x1="0" y1="0" x2="120" y2="0" stroke="rgba(125,211,252,0.65)" strokeWidth="1" />
-          <line x1="0" y1="-3" x2="0" y2="3" stroke="rgba(125,211,252,0.65)" strokeWidth="1" />
-          <line x1="60" y1="-2" x2="60" y2="2" stroke="rgba(125,211,252,0.45)" strokeWidth="0.6" />
-          <line x1="120" y1="-3" x2="120" y2="3" stroke="rgba(125,211,252,0.65)" strokeWidth="1" />
-          <text x="0"   y="-6" textAnchor="middle" fontFamily="ui-monospace, monospace" fontSize="7"
-                fill="rgba(125,211,252,0.7)">0</text>
-          <text x="60"  y="-6" textAnchor="middle" fontFamily="ui-monospace, monospace" fontSize="7"
-                fill="rgba(125,211,252,0.45)">2k</text>
-          <text x="120" y="-6" textAnchor="middle" fontFamily="ui-monospace, monospace" fontSize="7"
-                fill="rgba(125,211,252,0.7)">4000 km</text>
-        </g>
+        <rect width="1000" height="500" fill="none" stroke="#22d3ee" strokeWidth="1" opacity="0.10" />
       </svg>
     </div>
   );
@@ -490,6 +414,9 @@ function SideNewsCard({
   node, active, dimmed, onClick,
 }: { node: EnrichedNode; active: boolean; dimmed: boolean; onClick: () => void }) {
   const sv = SEV[node.severity] ?? SEV.low;
+  // age_min Date.now() ile hesaplanır → SSR ve client farklı dakika üretip
+  // hydration mismatch yapar. İlk render'da (server + client) deterministik
+  // placeholder göster; mount sonrası gerçek dakikayı ver.
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
   return (
@@ -535,12 +462,13 @@ function SideNewsCard({
 function AssetCard({ a }: { a: { asset: string; up: boolean; note: string } }) {
   const ICONS: Record<string, { icon: string; color: string }> = {
     BRENT:  { icon: "🛢", color: "text-orange-300" },
-    XAUUSD: { icon: "Au", color: "text-amber-300" },
-    XAGUSD: { icon: "Ag", color: "text-slate-300" },
-    BTCUSD: { icon: "₿",  color: "text-purple-300" },
-    ETHUSD: { icon: "Ξ",  color: "text-indigo-300" },
+    GOLD:   { icon: "Au", color: "text-amber-300" },
+    SILVER: { icon: "Ag", color: "text-slate-300" },
+    BTC:    { icon: "₿",  color: "text-purple-300" },
     DXY:    { icon: "$",  color: "text-cyan-300" },
     VIX:    { icon: "⚡", color: "text-red-300" },
+    SPY:    { icon: "📊", color: "text-blue-300" },
+    HYG:    { icon: "HY", color: "text-rose-300" },
   };
   const meta = ICONS[a.asset] ?? { icon: a.asset.slice(0, 2), color: "text-slate-300" };
   return (
@@ -550,7 +478,7 @@ function AssetCard({ a }: { a: { asset: string; up: boolean; note: string } }) {
       <div className="flex items-center gap-2">
         <span className={`text-sm font-bold shrink-0 ${meta.color}`}>{meta.icon}</span>
         <div className="flex-1 min-w-0">
-          <p className="text-[10px] font-mono font-bold text-white/70">{a.asset}</p>
+          <p className="text-[10px] font-mono font-bold text-white/80">{a.asset}</p>
           <p className="text-[10px] font-mono text-white/50 truncate">{a.note}</p>
         </div>
         <span className={`text-[10px] font-mono font-semibold shrink-0 ${a.up ? "text-red-300" : "text-cyan-300"}`}>
@@ -564,10 +492,11 @@ function AssetCard({ a }: { a: { asset: string; up: boolean; note: string } }) {
 // ── Main component ────────────────────────────────────────────────────────────
 
 interface Props {
-  headlines: NewsHeadline[];
+  headlines:   NewsHeadline[];
+  onDegraded?: (reason: string) => void;
 }
 
-export function NewsMapRadarLayer({ headlines }: Props) {
+export function NewsMapRadarLayer({ headlines, onDegraded: _onDegraded }: Props) {
   const [phase,    setPhase]   = useState<CyclePhase>({ mode: "sequence", idx: 0 });
   const [animate,  setAnimate] = useState(false);
   const [isMobile, setMobile]  = useState(false);
@@ -590,6 +519,7 @@ export function NewsMapRadarLayer({ headlines }: Props) {
   const enriched  = enrichHeadlines(headlines);
   const nodeCount = enriched.length;
 
+  // Haber okunmadan geçilmez — süre headline uzunluğuna göre
   const phaseDur = phase.mode === "sequence"
     ? durForNode(enriched[phase.idx % Math.max(nodeCount, 1)] ?? null)
     : PHASE_MS;
@@ -608,8 +538,9 @@ export function NewsMapRadarLayer({ headlines }: Props) {
 
   if (enriched.length === 0) {
     return (
-      <div className="rounded-2xl border border-white/10 bg-ink-800/40 p-5">
-        <p className="text-xs text-white/40 italic">Aktif son dakika haber kaydı yok.</p>
+      <div className="rounded-2xl border border-white/10 bg-black/40 p-5"
+           data-testid="news-map-radar">
+        <p className="text-xs text-white/50 italic">Aktif son dakika haber kaydı yok.</p>
       </div>
     );
   }
@@ -630,6 +561,7 @@ export function NewsMapRadarLayer({ headlines }: Props) {
       className="w-full max-w-full min-w-0 rounded-xl border border-white/10 bg-[#030e1c] overflow-hidden"
       data-testid="news-map-radar"
       data-cycle-mode={phase.mode}
+      data-reduced-motion={!animate ? "true" : "false"}
     >
       <style>{`
         @keyframes bnm-pulse   { 0%,100%{opacity:.28;transform:scale(1)} 50%{opacity:.70;transform:scale(1.45)} }
@@ -640,9 +572,10 @@ export function NewsMapRadarLayer({ headlines }: Props) {
         @keyframes bnm-ticker  { 0%,12%{transform:translateX(0)} 78%,100%{transform:translateX(-55%)} }
       `}</style>
 
+      {/* ── Header ── */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-white/10 bg-black/30">
         <div>
-          <p className="text-[11px] font-mono font-bold text-white/70 uppercase tracking-widest">
+          <p className="text-[11px] font-mono font-bold text-white/80 uppercase tracking-widest">
             Son Dakika Haber Radarı
           </p>
           <p className="text-[10px] font-mono text-white/50 mt-0.5">
@@ -651,7 +584,8 @@ export function NewsMapRadarLayer({ headlines }: Props) {
         </div>
         <div className="flex items-center gap-2">
           {allPulse && (
-            <span className="text-[10px] font-mono text-cyan-300/80 uppercase tracking-widest">
+            <span className="text-[10px] font-mono text-cyan-300/80 uppercase tracking-widest"
+                  style={animate ? { animation: "bnm-fadein 0.6s ease" } : undefined}>
               ◉ Global görünüm
             </span>
           )}
@@ -661,8 +595,10 @@ export function NewsMapRadarLayer({ headlines }: Props) {
         </div>
       </div>
 
+      {/* ── Desktop layout — harita tüm modülün arka planı ── */}
       {!isMobile && (
         <div className="relative min-h-[440px]">
+          {/* ARKA PLAN: tam genişlik dünya haritası */}
           <WorldMap
             fill
             nodes={enriched}
@@ -673,56 +609,62 @@ export function NewsMapRadarLayer({ headlines }: Props) {
             durationMs={phaseDur}
           />
 
+          {/* ÖN KATMAN: yan kolonlar + alt bilgi şeridi */}
           <div className="relative z-10 grid grid-cols-[190px_minmax(0,1fr)_175px] min-h-[440px] pointer-events-none">
-            <div className="pointer-events-auto border-r border-white/10 p-3 flex flex-col gap-2 bg-black/45 backdrop-blur-[2px] overflow-y-auto max-h-[460px]">
-              <p className="text-[10px] font-mono text-white/50 uppercase tracking-widest shrink-0">
-                Haberler · {enriched.length}
-              </p>
-              {enriched.map((n, i) => (
-                <SideNewsCard
-                  key={n.id} node={n}
-                  active={!allPulse && i === safeIdx}
-                  dimmed={allPulse}
-                  onClick={() => setPhase({ mode: "sequence", idx: i })}
-                />
-              ))}
-            </div>
 
-            <div className="flex flex-col justify-end min-w-0">
-              <div className="pointer-events-auto px-4 py-2 border-t border-white/10 bg-black/55 backdrop-blur-[2px] text-center"
-                   key={allPulse ? "all" : activeNode.id}
-                   style={animate ? { animation: "bnm-fadein 0.5s ease" } : undefined}>
-                {allPulse ? (
-                  <p className="text-[10px] font-mono text-cyan-300/90">
-                    ◉ GLOBAL RİSK GÖRÜNÜMÜ · {enriched.length} aktif bölge
+          {/* SOL: haber kartları */}
+          <div className="pointer-events-auto border-r border-white/10 p-3 flex flex-col gap-2 bg-black/45 backdrop-blur-[2px] overflow-y-auto max-h-[460px]">
+            <p className="text-[10px] font-mono text-white/50 uppercase tracking-widest shrink-0">
+              Haberler · {enriched.length}
+            </p>
+            {enriched.map((n, i) => (
+              <SideNewsCard
+                key={n.id} node={n}
+                active={!allPulse && i === safeIdx}
+                dimmed={allPulse}
+                onClick={() => setPhase({ mode: "sequence", idx: i })}
+              />
+            ))}
+          </div>
+
+          {/* ORTA: harita görünür kalsın — sadece alt bilgi şeridi */}
+          <div className="flex flex-col justify-end min-w-0">
+            <div className="pointer-events-auto px-4 py-2 border-t border-white/10 bg-black/55 backdrop-blur-[2px] text-center"
+                 key={allPulse ? "all" : activeNode.id}
+                 style={animate ? { animation: "bnm-fadein 0.5s ease" } : undefined}>
+              {allPulse ? (
+                <p className="text-[10px] font-mono text-cyan-300/90">
+                  ◉ GLOBAL RİSK GÖRÜNÜMÜ · {enriched.length} aktif bölge
+                </p>
+              ) : (
+                <>
+                  <p className="text-[10px] font-mono">
+                    <span className={`font-bold ${sv.text}`}>● {activeNode.geo.region}</span>
+                    <span className="text-white/50"> · {activeNode.source}</span>
                   </p>
-                ) : (
-                  <>
-                    <p className="text-[10px] font-mono">
-                      <span className={`font-bold ${sv.text}`}>● {activeNode.geo.region}</span>
-                      <span className="text-white/40"> · {activeNode.source}</span>
-                    </p>
-                    <p className="text-xs text-white/60 truncate mt-0.5 max-w-[460px] mx-auto">
-                      {activeNode.headline.slice(0, 95)}{activeNode.headline.length > 95 ? "…" : ""}
-                    </p>
-                  </>
-                )}
-              </div>
+                  <p className="text-xs text-white/50/80 truncate mt-0.5 max-w-[460px] mx-auto">
+                    {activeNode.headline.slice(0, 95)}{activeNode.headline.length > 95 ? "…" : ""}
+                  </p>
+                </>
+              )}
             </div>
+          </div>
 
-            <div className="pointer-events-auto border-l border-white/10 p-3 flex flex-col gap-2 bg-black/45 backdrop-blur-[2px]">
-              <p className="text-[10px] font-mono text-white/50 uppercase tracking-widest shrink-0">
-                Etkilenen Varlıklar
-              </p>
-              {impacts.length > 0
-                ? impacts.map((a, i) => <AssetCard key={i} a={a} />)
-                : <p className="text-[10px] font-mono text-white/30 italic">Varlık etkisi yok.</p>
-              }
-            </div>
+          {/* SAĞ: etkilenen varlıklar */}
+          <div className="pointer-events-auto border-l border-white/10 p-3 flex flex-col gap-2 bg-black/45 backdrop-blur-[2px]">
+            <p className="text-[10px] font-mono text-white/50 uppercase tracking-widest shrink-0">
+              Etkilenen Varlıklar
+            </p>
+            {impacts.length > 0
+              ? impacts.map((a, i) => <AssetCard key={i} a={a} />)
+              : <p className="text-[10px] font-mono text-white/50/50 italic">Varlık etkisi yok.</p>
+            }
+          </div>
           </div>
         </div>
       )}
 
+      {/* ── Mobile layout ── */}
       {isMobile && (
         <div className="space-y-3 p-3 bg-[#020a16]">
           <WorldMap
@@ -754,9 +696,10 @@ export function NewsMapRadarLayer({ headlines }: Props) {
         </div>
       )}
 
+      {/* ── Footer ── */}
       <div className="px-4 py-2 border-t border-white/10 bg-black/30">
-        <p className="text-[10px] font-mono text-white/40 text-center">
-          Radar yalnızca haber görselleştirmesidir · karar üretmez · ham veri liste görünümünde
+        <p className="text-[10px] font-mono text-white/50/55 text-center">
+          Radar yalnızca haber görselleştirmesidir · karar üretmez · veri alınamazsa klasik liste görünümüne dönülür
         </p>
       </div>
     </div>

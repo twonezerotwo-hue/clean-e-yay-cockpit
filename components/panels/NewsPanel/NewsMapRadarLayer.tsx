@@ -17,7 +17,6 @@ import {
   geoForRegion,
   type GeoPoint,
 } from "@/lib/news-region-map";
-import { WORLD_LAND_PATHS } from "@/lib/world-map-path";
 import type { NewsHeadline } from "@/types/generated/api";
 
 // Backend henüz NewsHeadline.url alanı dönmüyorsa Google News fallback.
@@ -157,10 +156,11 @@ const RISK_BADGE: Record<string, string> = {
 };
 
 // ── World map (local/static, equirectangular 1000×500) ───────────────────────
-// x=(lon+180)/360*1000, y=(90-lat)/180*500 — gerçek kıyı koordinatlarından
-// sadeleştirilmiş low-poly path'ler; runtime fetch yok.
+// x=(lon+180)/360*1000, y=(90-lat)/180*500.
+// The base layer is generated from Natural Earth 1:50m land and boundary data;
+// no runtime tile server or map API is used.
 
-const LANDMASS: string[] = WORLD_LAND_PATHS;
+const REAL_MAP_LAYER = "/maps/natural-earth-radar-map.svg";
 
 // ── Sub-components ────────────────────────────────────────────────────────────
 
@@ -316,13 +316,11 @@ function WorldMap({
             <stop offset="60%"  stopColor="#051226" />
             <stop offset="100%" stopColor="#020812" />
           </radialGradient>
-          <filter id="bnm-landglow" x="-10%" y="-10%" width="120%" height="120%">
-            <feGaussianBlur stdDeviation="1.4" result="b" />
-            <feMerge>
-              <feMergeNode in="b" />
-              <feMergeNode in="SourceGraphic" />
-            </feMerge>
-          </filter>
+          <linearGradient id="bnm-map-vignette" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stopColor="#020812" stopOpacity="0.08" />
+            <stop offset="42%" stopColor="#0ea5e9" stopOpacity="0.08" />
+            <stop offset="100%" stopColor="#020812" stopOpacity="0.34" />
+          </linearGradient>
         </defs>
 
         <rect width="1000" height="500" fill="url(#bnm-bg)" />
@@ -334,6 +332,17 @@ function WorldMap({
           transformOrigin: "0 0",
         }}>
 
+        <image
+          href={REAL_MAP_LAYER}
+          x="0"
+          y="0"
+          width="1000"
+          height="500"
+          preserveAspectRatio="none"
+          opacity="0.96"
+        />
+        <rect width="1000" height="500" fill="url(#bnm-map-vignette)" opacity="0.86" />
+
         {Array.from({ length: 17 }, (_, i) => (
           <line key={`v${i}`} x1={(i + 1) * 55.5} y1="0" x2={(i + 1) * 55.5} y2="500"
             stroke="#13335c" strokeWidth="0.4" opacity="0.5" />
@@ -343,14 +352,6 @@ function WorldMap({
             stroke="#13335c" strokeWidth="0.4" opacity="0.5" />
         ))}
         <line x1="0" y1="250" x2="1000" y2="250" stroke="#22d3ee" strokeWidth="0.6" opacity="0.18" />
-
-        <g filter="url(#bnm-landglow)">
-          {LANDMASS.map((d, i) => (
-            <path key={i} d={d}
-              fill="#0e2a4e" stroke="#2563a8" strokeWidth="1"
-              strokeLinejoin="round" opacity="0.92" />
-          ))}
-        </g>
 
         {allPulse && nodes.length > 1 && (
           <g opacity="0.35">

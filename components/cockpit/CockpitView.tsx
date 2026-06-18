@@ -25,6 +25,7 @@ import { CockpitCard, buildCockpitCards } from "./cards";
 import { HolographicSignalDeck } from "./HolographicSignalDeck";
 import { Layer2QuickNav } from "./Layer2QuickNav";
 import { MacroRiskStrip } from "./MacroRiskStrip";
+import { QuantumBackplaneScene } from "./QuantumBackplaneScene";
 import { SignalRadar } from "./SignalRadar";
 import { SpaceBrainScene } from "./SpaceBrainScene";
 
@@ -253,33 +254,37 @@ export function CockpitView() {
         </div>
       </section>
 
-      <section className="mx-auto max-w-7xl space-y-5 px-4 py-5">
-        <div className="md:hidden">
-          <Layer2QuickNav />
+      <section className="relative overflow-hidden border-t border-white/[0.08] bg-[radial-gradient(circle_at_18%_4%,rgba(167,139,250,0.08),transparent_28%),radial-gradient(circle_at_84%_12%,rgba(251,191,36,0.07),transparent_26%),linear-gradient(180deg,rgba(3,5,12,0.98),rgba(6,8,14,0.99))]">
+        <QuantumBackplaneScene brief={brief} />
+        <div className="quantum-dashboard-grid pointer-events-none absolute inset-0 z-[1]" />
+        <div className="relative z-10 mx-auto max-w-7xl space-y-5 px-4 py-5">
+          <div className="md:hidden">
+            <Layer2QuickNav />
+          </div>
+
+          <HolographicSignalDeck brief={brief} />
+
+          <MacroRiskStrip />
+
+          <section className="quantum-panel-cluster grid grid-cols-1 gap-5 xl:grid-cols-2">
+            <EventCalendarPanel />
+            <ScenarioPanel />
+          </section>
+
+          <CapitalRotationPanel />
+
+          <AgentBrainCard brief={brief} generatedAt={data?.generated_at} />
+
+          <section className="quantum-panel-cluster quantum-panel-cluster-cards grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            {cards.map((card) => (
+              <CockpitCard key={card.id} {...card} />
+            ))}
+          </section>
+
+          <NewsPanel />
+
+          <SignalRadar brief={brief} />
         </div>
-
-        <HolographicSignalDeck brief={brief} />
-
-        <MacroRiskStrip />
-
-        <section className="grid grid-cols-1 gap-5 xl:grid-cols-2">
-          <EventCalendarPanel />
-          <ScenarioPanel />
-        </section>
-
-        <CapitalRotationPanel />
-
-        <AgentBrainCard brief={brief} generatedAt={data?.generated_at} />
-
-        <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {cards.map((card) => (
-            <CockpitCard key={card.id} {...card} />
-          ))}
-        </section>
-
-        <NewsPanel />
-
-        <SignalRadar brief={brief} />
       </section>
     </main>
   );

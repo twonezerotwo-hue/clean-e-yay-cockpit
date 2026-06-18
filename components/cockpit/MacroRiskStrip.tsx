@@ -1,7 +1,9 @@
 "use client";
 
 import Link from "next/link";
+import type { CSSProperties } from "react";
 
+import { QuantumPanelField, getQuantumPanelStyle } from "@/components/shell/QuantumPanelField";
 import { useCockpitBrief, useRegimeReport } from "@/lib/queries/hooks";
 import { selectAgentBrief } from "@/lib/selectors/cockpit";
 import type { RegimeLayer } from "@/types/generated/api";
@@ -63,8 +65,12 @@ export function MacroRiskStrip() {
   const dataMode = brief?.data_mode ?? "WAIT";
 
   return (
-    <section className="rounded-lg border border-accent-cyan/18 bg-[#06111f]/82 p-3 shadow-[0_0_32px_rgba(34,211,238,0.08)]">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+    <section
+      className="quantum-panel rounded-lg border border-white/10 bg-[#070c13]/88 p-3 shadow-[0_0_32px_rgba(20,184,166,0.08)]"
+      style={getQuantumPanelStyle("macro_risk_filter", "#14b8a6", "#fbbf24") as CSSProperties}
+    >
+      <QuantumPanelField id="macro_risk_filter" density="compact" />
+      <div className="relative z-10 flex flex-wrap items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-2">
           <span className="h-2 w-2 rounded-full bg-accent-cyan shadow-[0_0_14px_rgba(34,211,238,0.95)]" />
           <div className="min-w-0">
@@ -84,7 +90,7 @@ export function MacroRiskStrip() {
         </Link>
       </div>
 
-      <div className="mt-3 flex flex-wrap gap-2">
+      <div className="relative z-10 mt-3 flex flex-wrap gap-2">
         <Chip
           label="Regime"
           value={regime?.regime_label ?? "waiting"}

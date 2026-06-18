@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 
+import { QuantumPanelField, getQuantumPanelStyle } from "@/components/shell/QuantumPanelField";
 import {
   useDataSnapshot,
   useRegimeReport,
@@ -601,8 +602,12 @@ export function HolographicSignalDeck({ brief }: { brief: AgentBrief }) {
 
   if (rows.length === 0) {
     return (
-      <section className="rounded-lg border border-white/10 bg-[#090d14]/88 p-6 text-center text-xs text-slate-400">
-        Aktif aday sinyal yok.
+      <section
+        className="quantum-panel rounded-lg border border-white/10 bg-[#090d14]/88 p-6 text-center text-xs text-slate-400"
+        style={getQuantumPanelStyle("layer1_holographic_signals", "#14b8a6", "#fbbf24")}
+      >
+        <QuantumPanelField id="layer1_holographic_signals" density="compact" />
+        <span className="relative z-10">Aktif aday sinyal yok.</span>
       </section>
     );
   }
@@ -611,7 +616,8 @@ export function HolographicSignalDeck({ brief }: { brief: AgentBrief }) {
     <section
       id="layer1_holographic_signals"
       data-panel="layer1_holographic_signals"
-      className="relative overflow-hidden rounded-lg border border-white/10 bg-[#090d14]/92 shadow-[0_18px_56px_rgba(0,0,0,0.30)]"
+      className="quantum-panel quantum-holo-deck relative overflow-hidden rounded-lg border border-white/10 bg-[#090d14]/92 shadow-[0_18px_56px_rgba(0,0,0,0.30)]"
+      style={getQuantumPanelStyle("layer1_holographic_signals", "#14b8a6", "#fbbf24")}
       onMouseEnter={() => setPaused(true)}
       onMouseLeave={() => setPaused(false)}
       onFocusCapture={() => setPaused(true)}
@@ -626,6 +632,7 @@ export function HolographicSignalDeck({ brief }: { brief: AgentBrief }) {
         @keyframes hsd-ticker { from{transform:translateX(0)} to{transform:translateX(-50%)} }
         @keyframes hsd-corner-glow { 0%,100%{opacity:.6} 50%{opacity:1} }
       `}</style>
+      <QuantumPanelField id="layer1_holographic_signals" density="deck" />
 
       {/* Header */}
       <div className="relative flex flex-wrap items-center justify-between gap-3 border-b border-white/10 bg-black/25 px-4 py-2.5">

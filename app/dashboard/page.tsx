@@ -10,6 +10,7 @@ import { NotificationToast } from "@/components/shell/NotificationToast";
 
 // ── ANA — 6 panel (tek-bakış cockpit) ────────────────────────────────────────
 import { AgentNarratorPanel } from "@/components/panels/AgentNarratorPanel";
+import { ExecutionReadinessPanel } from "@/components/panels/ExecutionReadinessPanel";
 import { TradeTicketPanel } from "@/components/panels/TradeTicketPanel";
 import { RiskDurumuPanel } from "@/components/panels/RiskDurumuPanel";
 import { TimeframeMatrixPanel } from "@/components/panels/TimeframeMatrixPanel";
@@ -93,6 +94,10 @@ export default function HomePage() {
           <AgentNarratorPanel />
         </div>
       </section>
+
+      <PanelGroup title="Islem Kontrol Dongusu" hint="10 kontrol · 60 saniye · read-only">
+        <GridCell span="full"><ExecutionReadinessPanel /></GridCell>
+      </PanelGroup>
 
       {/* 2) Trade Ticket */}
       <PanelGroup title="Trade Ticket" hint="broker'a manuel girmeden tek-bakış kart">
